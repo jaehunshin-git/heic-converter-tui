@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "heic-converter"
+version = "0.2.0"
+description = "HEIC 이미지를 JPEG 또는 PNG로 변환하는 명령줄 도구"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pillow>=10.0",
+  "pillow-heif>=0.18",
+  "questionary>=2.0.1",
+  "rich>=13.0",
+  "typer>=0.12",
+]
+
+[project.scripts]
+heic-converter = "heic_converter.cli:run"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.14",
+]
+
+[tool.ruff.lint]
+extend-select = ["B", "I", "UP"]
+ignore = ["B008"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/heic_converter"]
