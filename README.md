@@ -162,6 +162,29 @@ pipx upgrade heic-converter-tui
 pipx uninstall heic-converter-tui
 ```
 
+### 소스에서 설치 및 검증
+
+소스 체크아웃을 도구로 직접 설치하려면 저장소 루트에서 다음 중 하나를 실행합니다.
+
+```bash
+uv tool install .
+```
+
+```bash
+pipx install .
+```
+
+개발 의존성을 설치한 뒤 테스트, 정적 검사 및 배포 파일을 검증하려면 다음 명령을
+사용합니다.
+
+```bash
+uv sync --group dev
+uv run pytest
+uv run ruff check .
+uv build
+uvx --from twine twine check dist/*
+```
+
 ## 📚 동작 및 옵션
 
 ### 명령 형식
