@@ -109,7 +109,6 @@ def _open_tui(
         on_conflict=cast(ConflictMode, on_conflict.casefold()),
     )
     if config is None:
-        console.print("변환을 취소했습니다.")
         raise typer.Exit(code=130)
     return config
 
