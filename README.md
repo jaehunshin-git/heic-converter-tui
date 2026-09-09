@@ -15,7 +15,7 @@ see [README.ko.md](README.ko.md).
 
 | Feature | Description |
 | --- | --- |
-| Arrow-key TUI | Choose input and output paths, format, quality, metadata policy, and conflict policy step by step. |
+| Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
 | JPEG and PNG output | Configure JPEG quality or PNG compression level. |
 | Safe metadata by default | Remove GPS and XMP while retaining other EXIF capture data and ICC profiles where possible. |
@@ -93,30 +93,35 @@ Run the command without arguments in a real terminal:
 heic-converter
 ```
 
-The UI currently displays Korean labels. It asks for settings in the following
-order; use the `↑` and `↓` arrow keys to move between choices, press Enter to
-confirm, and type paths directly.
+Choose `한국어` or `English` first. The rest of the UI, including validation
+messages, choices, the summary, and cancellation notices, follows that choice.
+Use the `↑` and `↓` arrow keys to move between choices, press Enter to confirm,
+and type paths directly.
 
 ```text
-HEIC 이미지 변환 설정
+HEIC Converter TUI
 
-? 입력 디렉터리 경로 ./input
-? 출력 디렉터리 경로 ./output
-? 출력 형식 JPEG
-? JPEG 품질 높음 (90)
-? 하위 디렉터리도 변환할까요? 아니요 — 현재 디렉터리만
-? 메타데이터 처리 안전하게 유지 (권장) — GPS 등 민감 정보는 제거
-? 같은 이름의 출력 파일이 있을 때 이름 변경 (권장) — 번호를 붙여 새 파일 생성
+? Language / 언어 English
 
-설정 요약
-  입력 디렉터리: input
-  출력 디렉터리: output
-  출력 형식: JPEG (JPEG 품질 90)
-  하위 디렉터리 포함: 아니요
-  메타데이터: safe
-  파일 충돌 처리: rename
+HEIC conversion settings
 
-? 이 설정으로 변환을 시작할까요? 시작
+? Input directory path ./input
+? Output directory path ./output
+? Output format JPEG
+? JPEG quality High (90)
+? Include subdirectories? No — current directory only
+? Metadata handling Keep safely (recommended) — remove sensitive data such as GPS
+? When an output file has the same name Rename (recommended) — create a numbered filename
+
+Configuration summary
+  Input directory: input
+  Output directory: output
+  Output format: JPEG (JPEG quality 90)
+  Include subdirectories: No
+  Metadata: Keep safely
+  File conflict handling: Rename
+
+? Start conversion with these settings? Start
 ```
 
 Press `Ctrl+C` or choose `Cancel` at the last prompt to exit without converting;
