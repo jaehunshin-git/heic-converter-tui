@@ -1,4 +1,4 @@
-# HEIC Converter
+# HEIC Converter TUI
 
 HEIC 이미지를 JPEG 또는 PNG로 변환하는 설치형 Python 3.11+ 명령줄 도구입니다. macOS를 우선 지원하며, 입력 디렉터리와 하위 디렉터리를 처리합니다.
 
@@ -12,7 +12,19 @@ HEIC 이미지를 JPEG 또는 PNG로 변환하는 설치형 Python 3.11+ 명령�
 
 ## 설치
 
-저장소 루트에서 다음 중 하나를 실행합니다.
+PyPI에서 설치하려면 다음 중 하나를 실행합니다.
+
+```bash
+uv tool install heic-converter-tui
+```
+
+또는
+
+```bash
+pipx install heic-converter-tui
+```
+
+소스 저장소에서 직접 설치하려면 저장소 루트에서 다음 중 하나를 실행합니다.
 
 ```bash
 uv tool install .
@@ -24,7 +36,7 @@ uv tool install .
 pipx install .
 ```
 
-설치 후 실행 파일 이름은 `heic-converter`입니다.
+배포 패키지 이름은 `heic-converter-tui`이며, 설치 후 실행 파일 이름은 `heic-converter`입니다.
 
 ## 사용법
 
