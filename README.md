@@ -257,3 +257,7 @@ JPEG or PNG. It does not support:
 | `1` | One or more files could not be read, converted, or saved. |
 | `2` | An argument, path, or option is invalid, or no `.heic` files were found. |
 | `130` | The interactive UI was interrupted with `Ctrl+C` or cancelled. |
+
+## License
+
+This project is distributed under the [MIT License](LICENSE).
