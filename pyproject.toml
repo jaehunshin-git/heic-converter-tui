@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "heic-converter"
+name = "heic-converter-tui"
 version = "0.2.0"
 description = "HEIC 이미지를 JPEG 또는 PNG로 변환하는 명령줄 도구"
 readme = "README.md"
