@@ -156,13 +156,29 @@ def _ask_select(
 ) -> Any:
     """Display an arrow-key selection prompt."""
 
-    menu_choices = [_questionary().Choice(title, value=value) for title, value in choices]
-    return _questionary().select(
+    ui = _questionary()
+    menu_choices = [
+        ui.Choice(title, value=value) for title, value in choices
+    ]
+    prompt = ui.select(
         message,
         choices=menu_choices,
         default=default,
         instruction=instruction,
-    ).ask()
+        style=ui.Style([("highlighted", "reverse")]),
+    )
+
+    # Questionary는 select의 default를 초기 커서 위치와 고정 선택 상태에 동시에
+    # 사용한다. 고정 상태를 비워야 현재 커서 행의 배경 강조가 방향키를 따라간다.
+    application = getattr(prompt, "application", None)
+    layout = getattr(application, "layout", None)
+    if layout is not None:
+        for control in layout.find_all_controls():
+            selected_options = getattr(control, "selected_options", None)
+            if isinstance(selected_options, list):
+                selected_options.clear()
+
+    return prompt.ask()
 
 
 def _metadata_choices(language: UiLanguage) -> list[tuple[str, MetadataMode]]:

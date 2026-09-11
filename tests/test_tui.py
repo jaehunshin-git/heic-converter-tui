@@ -60,6 +60,12 @@ class _QuestionaryStub:
             self.title = title
             self.value = value
 
+    @staticmethod
+    def Style(rules: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """스타일 규칙을 그대로 보관하는 최소 Style 대역입니다."""
+
+        return rules
+
 
 def patch_questionary(monkeypatch, answers: dict[str, Any]) -> _QuestionaryStub:
     """메시지별 응답을 제공하는 questionary 대역을 설치합니다."""
@@ -68,9 +74,55 @@ def patch_questionary(monkeypatch, answers: dict[str, Any]) -> _QuestionaryStub:
     monkeypatch.setattr(
         tui,
         "questionary",
-        SimpleNamespace(text=stub.text, select=stub.select, Choice=stub.Choice),
+        SimpleNamespace(
+            text=stub.text,
+            select=stub.select,
+            Choice=stub.Choice,
+            Style=stub.Style,
+        ),
     )
     return stub
+
+
+def test_select_highlight_follows_cursor(monkeypatch):
+    """기본값의 고정 강조를 없애고 현재 커서 행만 역상으로 강조합니다."""
+
+    questionary = tui._questionary()
+    real_select = questionary.select
+    captured_prompt: list[Any] = []
+
+    def select_without_terminal(*args: Any, **kwargs: Any) -> Any:
+        prompt = real_select(*args, **kwargs)
+        monkeypatch.setattr(prompt, "ask", lambda: "png")
+        captured_prompt.append(prompt)
+        return prompt
+
+    monkeypatch.setattr(questionary, "select", select_without_terminal)
+
+    assert (
+        tui._ask_select(
+            "형식",
+            [("JPEG", "jpeg"), ("PNG", "png")],
+            "jpeg",
+            "방향키로 이동",
+        )
+        == "png"
+    )
+
+    prompt = captured_prompt[0]
+    selection_control = next(
+        control
+        for control in prompt.application.layout.find_all_controls()
+        if hasattr(control, "selected_options")
+    )
+    assert selection_control.selected_options == []
+    assert ("class:highlighted", "JPEG") in selection_control._get_choice_tokens()
+
+    selection_control.select_next()
+
+    assert ("class:highlighted", "PNG") in selection_control._get_choice_tokens()
+    highlighted = prompt.application.style.get_attrs_for_style_str("class:highlighted")
+    assert highlighted.reverse is True
 
 
 def test_collects_all_jpeg_settings(tmp_path, monkeypatch):
