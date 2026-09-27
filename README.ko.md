@@ -1,7 +1,5 @@
 # HEIC Converter TUI
 
-[English README](README.md)
-
 > 방향키로 설정하고, 명령어로 자동화하는 macOS 우선 HEIC 일괄 변환기
 
 `heic-converter-tui`는 디렉터리의 `.heic` 사진을 JPEG 또는 PNG로 변환하는
@@ -21,6 +19,7 @@ Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 
 | 다국어 방향키 TUI | 한국어 또는 English를 먼저 고른 뒤 입력·출력 경로, 형식, 품질, 메타데이터 및 충돌 정책을 순서대로 선택합니다. |
 | 자동화용 CLI | 동일한 기능을 명령어 옵션으로 지정해 비대화형 환경에서 실행할 수 있습니다. |
 | JPEG·PNG 출력 | JPEG는 품질을, PNG는 압축 수준을 조정할 수 있습니다. |
+| HDR 색상 유지 | macOS 15 이상에서 Apple HDR 게인 맵을 16비트 HDR PNG에 반영합니다. |
 | 안전한 메타데이터 기본값 | GPS와 XMP를 제거하면서 EXIF 촬영 정보와 ICC 프로파일은 가능한 범위에서 보존합니다. |
 | 안정적인 파일 처리 | 임시 파일에 먼저 저장한 뒤 결과를 반영하며, 한 파일이 실패해도 나머지 변환을 계속합니다. |
 | 재귀 변환 | `--recursive`를 사용하면 하위 디렉터리를 검색하고 상대 디렉터리 구조를 유지합니다. |
@@ -43,7 +42,7 @@ Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 
 | 실행 환경 | Python 3.11+ |
 | 명령줄 | Typer, Rich |
 | 터미널 UI | Questionary |
-| 이미지 처리 | Pillow, pillow-heif |
+| 이미지 처리 | Pillow, pillow-heif, macOS ImageIO(PyObjC) |
 | 테스트 및 빌드 | Pytest, Ruff, Hatchling, uv |
 
 ## 📁 프로젝트 구조
@@ -225,11 +224,16 @@ TUI에서는 자주 쓰는 품질·압축 사전 설정을 고르며, CLI에서�
 | --- | --- |
 | `safe` | GPS와 XMP를 제거하고 나머지 EXIF와 ICC 프로파일을 가능한 범위에서 보존합니다. |
 | `preserve` | EXIF, XMP, ICC 프로파일을 가능한 범위에서 보존합니다. |
-| `strip` | 출력 이미지에 메타데이터를 저장하지 않습니다. |
+| `strip` | 출력 이미지에서 EXIF와 XMP를 제거합니다. HDR PNG의 색 재현에 필요한 ICC 프로파일은 유지합니다. |
 
 변환 시 이미지 방향을 픽셀에 반영하고, 메타데이터를 저장하는 경우 출력 EXIF 방향
 값을 `1`로 정규화합니다. JPEG는 알파 채널을 지원하지 않으므로 투명 영역을 흰색
 배경과 합성합니다. PNG는 알파 채널을 유지합니다.
+
+macOS 15 이상에서는 Apple HDR 게인 맵이 포함된 HEIC를 16비트 HDR PNG로
+변환합니다. HDR 화면에서 원본의 밝기와 색 표현을 유지하기 위해 PNG에 HDR
+색상 프로파일을 기록합니다. 다른 환경에서는 HEIC의 기본 SDR 이미지를 PNG로
+저장하므로 HDR 화면에서 원본과 다르게 보일 수 있습니다. JPEG 출력은 SDR입니다.
 
 ### 파일 검색과 충돌 처리
 

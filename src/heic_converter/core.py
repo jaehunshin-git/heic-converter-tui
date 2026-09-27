@@ -5,10 +5,13 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
+import platform
 import re
 import sys
 import tempfile
 import unicodedata
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -26,6 +29,8 @@ _EXIF_GPS_INFO = 34853
 _EXIF_XMP = 700
 _RENAME_EXCL = 0x00000004
 _UNSUPPORTED_ATOMIC_ERRORS = {errno.EINVAL, errno.ENOSYS, errno.ENOTSUP}
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_APPLE_HDR_GAIN_MAP = "urn:com:apple:photo:2020:aux:hdrgainmap"
 
 
 @dataclass(frozen=True)
@@ -245,12 +250,11 @@ def _commit_without_overwrite(source: str, destination: Path) -> None:
         Path(source).unlink()
 
 
-def _atomic_save(
-    image: Image.Image,
+def _atomic_write(
     destination: Path,
     *,
     overwrite: bool,
-    **save_kwargs: object,
+    write: Callable[[str], None],
 ) -> None:
     """완성된 파일만 목적지에 나타나도록 같은 디렉터리의 임시 파일로 저장합니다."""
 
@@ -264,7 +268,7 @@ def _atomic_save(
             delete=False,
         ) as temporary:
             temp_name = temporary.name
-        image.save(temp_name, **save_kwargs)
+        write(temp_name)
         with open(temp_name, "rb") as temporary_file:
             os.fsync(temporary_file.fileno())
         if overwrite:
@@ -277,6 +281,128 @@ def _atomic_save(
     finally:
         if temp_name:
             Path(temp_name).unlink(missing_ok=True)
+
+
+def _atomic_save(
+    image: Image.Image,
+    destination: Path,
+    *,
+    overwrite: bool,
+    **save_kwargs: object,
+) -> None:
+    """Pillow 결과를 원자적으로 저장합니다."""
+
+    _atomic_write(
+        destination,
+        overwrite=overwrite,
+        write=lambda path: image.save(path, **save_kwargs),
+    )
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    """PNG 청크의 길이와 CRC를 포함한 바이트를 만듭니다."""
+
+    return (
+        len(data).to_bytes(4, "big")
+        + kind
+        + data
+        + zlib.crc32(kind + data).to_bytes(4, "big")
+    )
+
+
+def _copy_hdr_png_with_metadata(
+    source: Path, destination: Path, metadata_kwargs: dict[str, object]
+) -> None:
+    """HDR 픽셀과 프로필은 유지하고 기존 메타데이터 정책만 적용합니다."""
+
+    exif = metadata_kwargs.get("exif")
+    if isinstance(exif, bytes) and exif.startswith(b"Exif\x00\x00"):
+        exif = exif[6:]
+    xmp = metadata_kwargs.get("xmp")
+    if isinstance(xmp, str):
+        xmp = xmp.encode("utf-8")
+
+    with source.open("rb") as original, destination.open("wb") as output:
+        if original.read(8) != _PNG_SIGNATURE:
+            raise ValueError("macOS ImageIO가 유효한 PNG를 생성하지 못했습니다.")
+        output.write(_PNG_SIGNATURE)
+        inserted = False
+        while True:
+            length_bytes = original.read(4)
+            if len(length_bytes) != 4:
+                raise ValueError("macOS ImageIO의 PNG 청크가 불완전합니다.")
+            length = int.from_bytes(length_bytes, "big")
+            kind = original.read(4)
+            if len(kind) != 4:
+                raise ValueError("macOS ImageIO의 PNG 청크가 불완전합니다.")
+            if kind == b"IDAT" and not inserted:
+                if isinstance(exif, bytes):
+                    output.write(_png_chunk(b"eXIf", exif))
+                if isinstance(xmp, bytes):
+                    output.write(
+                        _png_chunk(b"iTXt", b"XML:com.adobe.xmp\x00\x00\x00\x00\x00" + xmp)
+                    )
+                inserted = True
+            if kind == b"eXIf":
+                original.seek(length + 4, os.SEEK_CUR)
+            else:
+                output.write(length_bytes + kind)
+                remaining = length + 4
+                while remaining:
+                    block = original.read(min(1024 * 1024, remaining))
+                    if not block:
+                        raise ValueError("macOS ImageIO의 PNG 청크가 불완전합니다.")
+                    output.write(block)
+                    remaining -= len(block)
+            if kind == b"IEND":
+                break
+        if not inserted:
+            raise ValueError("macOS ImageIO의 PNG에 이미지 데이터가 없습니다.")
+
+
+def _save_hdr_png(source: Path, destination: Path, metadata_kwargs: dict[str, object]) -> None:
+    """macOS ImageIO로 게인 맵을 HDR PNG 픽셀과 색상 프로필에 반영합니다."""
+
+    import Quartz
+    from Foundation import NSURL
+
+    image_source = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(str(source)), None)
+    if image_source is None:
+        raise ValueError(f"HEIC 파일을 읽지 못했습니다: {source}")
+    hdr = Quartz.CGImageSourceCreateImageAtIndex(
+        image_source,
+        0,
+        {Quartz.kCGImageSourceDecodeRequest: Quartz.kCGImageSourceDecodeToHDR},
+    )
+    if hdr is None:
+        raise ValueError(f"HEIC의 HDR 이미지를 읽지 못했습니다: {source}")
+
+    native = destination.with_name(destination.name + ".native.png")
+    try:
+        image_destination = Quartz.CGImageDestinationCreateWithURL(
+            NSURL.fileURLWithPath_(str(native)), "public.png", 1, None
+        )
+        if image_destination is None:
+            raise ValueError("macOS ImageIO가 PNG 출력 파일을 만들지 못했습니다.")
+        Quartz.CGImageDestinationAddImage(
+            image_destination,
+            hdr,
+            {Quartz.kCGImageDestinationEncodeRequest: Quartz.kCGImageDestinationEncodeToISOHDR},
+        )
+        if not Quartz.CGImageDestinationFinalize(image_destination):
+            raise ValueError("macOS ImageIO가 HDR PNG를 저장하지 못했습니다.")
+        _copy_hdr_png_with_metadata(native, destination, metadata_kwargs)
+    finally:
+        native.unlink(missing_ok=True)
+
+
+def _supports_hdr_png() -> bool:
+    """ISO HDR PNG 인코딩을 제공하는 macOS에서만 네이티브 경로를 사용합니다."""
+
+    if sys.platform != "darwin":
+        return False
+    version = platform.mac_ver()[0]
+    return bool(version) and int(version.split(".")[0]) >= 15
 
 
 def convert_image(
@@ -293,11 +419,27 @@ def convert_image(
 
     register_heif_opener()
     with Image.open(source) as opened:
+        has_hdr_gain_map = bool(
+            opened.info.get("aux", {}).get(_APPLE_HDR_GAIN_MAP)
+        )
+        original_orientation = opened.getexif().get(_EXIF_ORIENTATION, 1)
         # pillow-heif는 파일을 열 때 primary image를 현재 프레임으로 선택한다.
         # seek(0)을 호출하면 primary가 아닌 첫 프레임으로 바뀔 수 있다.
         image = ImageOps.exif_transpose(opened)
         # exif_transpose 결과에서 메타데이터를 읽어 EXIF/XMP 방향도 픽셀과 맞춘다.
         metadata_kwargs = _metadata_kwargs(image, metadata)
+        if (
+            output_format == "png"
+            and has_hdr_gain_map
+            and original_orientation == 1
+            and _supports_hdr_png()
+        ):
+            _atomic_write(
+                destination,
+                overwrite=overwrite,
+                write=lambda path: _save_hdr_png(source, Path(path), metadata_kwargs),
+            )
+            return ConversionResult(source=source, destination=destination)
         converted = _prepare_for_output(image, output_format)
         xmp = metadata_kwargs.pop("xmp", None)
         save_kwargs: dict[str, object] = {
