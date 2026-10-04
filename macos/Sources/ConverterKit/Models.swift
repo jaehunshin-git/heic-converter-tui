@@ -1,0 +1,167 @@
+import Foundation
+
+public struct ConversionOptions: Codable, Equatable {
+    public var outputFormat = "jpeg"
+    public var jpegQuality = 90
+    public var pngCompression = 6
+    public var metadata = "safe"
+    public var onConflict = "rename"
+    public init() {}
+    enum CodingKeys: String, CodingKey {
+        case outputFormat = "output_format", jpegQuality = "jpeg_quality"
+        case pngCompression = "png_compression", metadata, onConflict = "on_conflict"
+    }
+}
+
+public struct AppSettings: Codable, Equatable {
+    public var options = ConversionOptions()
+    public var clipboardEnabled = true
+    public var outputDirectory = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Downloads/HEIC Converter").path
+    public init() {}
+    public static func load(from defaults: UserDefaults = .standard) -> AppSettings {
+        guard let data = defaults.data(forKey: "converter.settings"),
+              let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+        return value
+    }
+    public func save(to defaults: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(self) { defaults.set(data, forKey: "converter.settings") }
+    }
+}
+
+public enum FileStatus: String { case waiting, scheduled, running, succeeded, skipped, failed
+    public var label: String {
+        switch self {
+        case .waiting: return "대기"
+        case .scheduled: return "예약"
+        case .running: return "변환 중"
+        case .succeeded: return "성공"
+        case .skipped: return "건너뜀"
+        case .failed: return "실패"
+        }
+    }
+    public var finished: Bool { self == .succeeded || self == .skipped }
+    public var locked: Bool { self == .scheduled || self == .running }
+}
+
+public struct FileItem: Identifiable {
+    public let id: String
+    public let url: URL
+    public var status: FileStatus = .waiting
+    public var detail: String?
+    public var destination: String?
+    public init(url: URL) { self.url = url; self.id = url.path }
+}
+
+public struct InputRejection: Equatable {
+    public let path: String
+    public let reason: String
+    public init(path: String, reason: String) { self.path = path; self.reason = reason }
+}
+
+public enum InputValidator {
+    public static func validate(_ urls: [URL], excluding: Set<String> = []) -> (accepted: [URL], rejected: [InputRejection]) {
+        var paths = excluding
+        var accepted: [URL] = []
+        var rejected: [InputRejection] = []
+        for url in urls {
+            var reason: String?
+            var canonical = url.standardizedFileURL
+            if !url.isFileURL || (url.host != nil && url.host != "" && url.host != "localhost") {
+                reason = "로컬 파일 URL만 지원합니다."
+            } else if url.pathExtension.lowercased() != "heic" {
+                reason = "확장자가 .heic인 파일만 지원합니다."
+            } else {
+                do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                    if attributes[.type] as? FileAttributeType == .typeSymbolicLink {
+                        reason = "심볼릭 링크는 지원하지 않습니다."
+                    } else if attributes[.type] as? FileAttributeType != .typeRegular {
+                        reason = "폴더가 아닌 일반 파일을 선택하세요."
+                    } else if !FileManager.default.isReadableFile(atPath: url.path) {
+                        reason = "파일 읽기 권한이 없습니다."
+                    } else {
+                        canonical = canonical.resolvingSymlinksInPath()
+                        if paths.contains(canonical.path) { reason = "이미 목록에 있는 파일입니다." }
+                    }
+                } catch { reason = "파일이 없거나 읽을 수 없습니다: \(error.localizedDescription)" }
+            }
+            if let reason { rejected.append(InputRejection(path: url.path, reason: reason)) }
+            else { accepted.append(canonical); paths.insert(canonical.path) }
+        }
+        return (accepted, rejected)
+    }
+}
+
+public struct ConversionJob {
+    public let id = UUID().uuidString
+    public let files: [String]
+    public let outputDirectory: String
+    public let options: ConversionOptions
+    public init(files: [String], settings: AppSettings) {
+        self.files = files; outputDirectory = settings.outputDirectory; options = settings.options
+    }
+}
+
+public struct QueueState {
+    public var items: [FileItem] = []
+    public private(set) var jobs: [ConversionJob] = []
+    public private(set) var activeJob: ConversionJob?
+    public init() {}
+    public var knownPaths: Set<String> { Set(items.map(\.id)) }
+    public var waitingCount: Int { items.filter { $0.status == .waiting || $0.status == .scheduled }.count }
+    public mutating func add(_ urls: [URL]) {
+        var known = knownPaths
+        for url in urls where !known.contains(url.path) { items.append(FileItem(url: url)); known.insert(url.path) }
+    }
+    public mutating func schedule(paths: [String], settings: AppSettings) {
+        let selected = items.filter { paths.contains($0.id) && ($0.status == .waiting || $0.status == .failed) }.map(\.id)
+        guard !selected.isEmpty else { return }
+        for index in items.indices where selected.contains(items[index].id) { items[index].status = .scheduled; items[index].detail = nil }
+        jobs.append(ConversionJob(files: selected, settings: settings))
+    }
+    public mutating func next() -> ConversionJob? {
+        guard activeJob == nil, !jobs.isEmpty else { return nil }
+        activeJob = jobs.removeFirst()
+        return activeJob
+    }
+    public mutating func update(path: String, status: FileStatus, detail: String? = nil, destination: String? = nil) {
+        guard let index = items.firstIndex(where: { $0.id == path }) else { return }
+        items[index].status = status; items[index].detail = detail; items[index].destination = destination
+    }
+    public mutating func finish() {
+        if let job = activeJob {
+            for index in items.indices where job.files.contains(items[index].id) && items[index].status.locked {
+                items[index].status = .waiting
+            }
+        }
+        activeJob = nil
+    }
+    public mutating func failActive(_ message: String) {
+        if let job = activeJob {
+            for index in items.indices where job.files.contains(items[index].id) && items[index].status.locked {
+                items[index].status = .failed; items[index].detail = message
+            }
+        }
+        activeJob = nil
+        // worker 장애 이후 예약 작업은 사용자가 다시 시작할 수 있도록 돌려놓는다.
+        jobs.removeAll()
+        for index in items.indices where items[index].status == .scheduled { items[index].status = .waiting }
+    }
+    public mutating func remove(_ path: String) { items.removeAll { $0.id == path && !$0.status.locked } }
+    public mutating func clearCompleted() { items.removeAll { $0.status.finished } }
+}
+
+public struct ClipboardGate {
+    public private(set) var lastChange: Int
+    public private(set) var denied = false
+    public init(changeCount: Int) { lastChange = changeCount }
+    public mutating func resume(changeCount: Int) { lastChange = changeCount; denied = false }
+    public mutating func shouldRead(changeCount: Int, enabled: Bool, accessDenied: Bool) -> Bool {
+        guard enabled, !denied else { return false }
+        if accessDenied { denied = true; lastChange = changeCount; return false }
+        guard changeCount != lastChange else { return false }
+        lastChange = changeCount
+        return true
+    }
+}
