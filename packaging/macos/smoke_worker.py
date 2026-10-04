@@ -20,7 +20,7 @@ def synthetic_hdr(directory: Path) -> Path:
     exif = Image.Exif()
     exif[34853] = {1: "N", 2: (37, 1)}
     profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
-    Image.new("RGB", (16, 16), (60, 100, 180)).save(
+    Image.new("RGB", (256, 256), (60, 100, 180)).save(
         base,
         exif=exif.tobytes(),
         icc_profile=profile,
@@ -51,11 +51,13 @@ def synthetic_hdr(directory: Path) -> Path:
         destination,
         quartz.kCGImageAuxiliaryDataTypeHDRGainMap,
         {
-            quartz.kCGImageAuxiliaryDataInfoData: bytes([128] * 64),
+            quartz.kCGImageAuxiliaryDataInfoData: bytes(
+                32 + (x + y) % 192 for y in range(128) for x in range(128)
+            ),
             quartz.kCGImageAuxiliaryDataInfoDataDescription: {
-                "Width": 8,
-                "Height": 8,
-                "BytesPerRow": 8,
+                "Width": 128,
+                "Height": 128,
+                "BytesPerRow": 128,
                 "PixelFormat": 0x4C303038,
             },
             quartz.kCGImageAuxiliaryDataInfoMetadata: metadata,
@@ -146,7 +148,7 @@ def smoke(worker: Path) -> None:
         content = png.read_bytes()
         assert content[24] == 16
         with Image.open(png) as image:
-            assert image.size == (16, 16)
+            assert image.size == (256, 256)
             if image.info.get("icc_profile"):
                 profile = ImageCms.ImageCmsProfile(
                     io.BytesIO(image.info["icc_profile"])
