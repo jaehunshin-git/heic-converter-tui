@@ -40,7 +40,7 @@
 | `prepared` | `files`, `rejected`의 `source`/`reason`, `total`: 실행 가능한 입력과 제외 이유 |
 | `file_started` | `source`, `index`, `total`: 파일 처리 시작, index는 1부터 시작 |
 | `file_succeeded` | `source`, `destination`, `hdr_applied`, `sdr_reason`: 저장 완료 |
-| `file_skipped` | `source`, `destination`: 충돌 정책에 따른 건너뜀 |
+| `file_skipped` | `source`, `reason`: 충돌 정책에 따른 건너뜀 |
 | `file_failed` | `source`, `error`, `error_code`: 파일별 실패, 다음 파일은 계속 처리 |
 | `completed` | `succeeded`, `skipped`, `failed`, `total`, `remaining`: 작업 집계 |
 | `cancelled` | 완료한 파일의 집계와 실행하지 않은 `remaining` 경로 |
@@ -62,3 +62,7 @@ Pillow의 PNG 압축 수준을 강제하지 않는다.
 
 파일 목록과 이벤트를 파일로 영구 기록하지 않는다. 앱은 종료 시 대기 목록을 버리고
 설정과 저장 위치만 기억한다. 앱 종료 시 입력 파이프, worker 및 감지 타이머를 정리한다.
+
+표준 입력 EOF를 받으면 실행 중 작업이 완료된 뒤 종료한다. SIGTERM 또는 SIGINT는
+현재 파일 저장을 마친 뒤 취소 결과를 보내고 종료한다. 출력 이벤트는 네이티브
+라이브러리의 stdout 진단과도 분리하여 JSONL 스트림을 보호한다.
