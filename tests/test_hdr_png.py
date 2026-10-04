@@ -41,3 +41,50 @@ def test_hdr_png_metadata_keeps_profile_and_obeys_policy(tmp_path):
         assert image.info["icc_profile"] == b"test-profile"
         assert not image.getexif()
         assert not image.info.get("xmp")
+
+
+def test_conversion_reports_sdr_reason_for_jpeg_and_missing_gain_map(tmp_path, heic_factory):
+    from heic_converter.core import convert_image
+
+    source = heic_factory(tmp_path / "sdr.heic")
+    jpeg = convert_image(source, tmp_path / "sdr.jpeg", output_format="jpeg")
+    png = convert_image(source, tmp_path / "sdr.png", output_format="png")
+    assert not jpeg.hdr_applied and "JPEG" in jpeg.sdr_reason
+    assert not png.hdr_applied and "게인 맵" in png.sdr_reason
+
+
+def test_hdr_branch_reports_application_and_sdr_fallback_conditions(tmp_path, heic_factory, monkeypatch):
+    from heic_converter import core
+
+    source = heic_factory(tmp_path / "gain-map.heic")
+    original_open = core.Image.open
+    orientation = 1
+    supported = True
+    native_calls = []
+
+    def open_with_gain_map(*args, **kwargs):
+        opened = original_open(*args, **kwargs)
+        opened.info["aux"] = {core._APPLE_HDR_GAIN_MAP: [1]}
+        opened.getexif()[274] = orientation
+        return opened
+
+    def save_native(_source, destination, metadata):
+        native_calls.append(metadata)
+        Image.new("RGB", (2, 2)).save(destination, format="PNG", icc_profile=b"hdr-profile")
+
+    monkeypatch.setattr(core.Image, "open", open_with_gain_map)
+    monkeypatch.setattr(core, "_supports_hdr_png", lambda: supported)
+    monkeypatch.setattr(core, "_save_hdr_png", save_native)
+    hdr = core.convert_image(source, tmp_path / "hdr.png", output_format="png", metadata="strip")
+    assert hdr.hdr_applied and hdr.sdr_reason is None
+    assert native_calls == [{}]
+    with original_open(tmp_path / "hdr.png") as image:
+        assert image.info["icc_profile"] == b"hdr-profile"
+    orientation = 6
+    rotated = core.convert_image(source, tmp_path / "rotated.png", output_format="png")
+    assert not rotated.hdr_applied and "방향" in rotated.sdr_reason
+    orientation = 1
+    supported = False
+    unsupported = core.convert_image(source, tmp_path / "unsupported.png", output_format="png")
+    assert not unsupported.hdr_applied and "macOS 15" in unsupported.sdr_reason
+    assert len(native_calls) == 1
