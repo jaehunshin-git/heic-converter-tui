@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
+import signal
 import sys
 import threading
 from collections.abc import Mapping
@@ -132,14 +134,30 @@ class Worker:
 
 def main() -> None:
     """stdout을 JSON 전용으로 확보하고 라이브러리 진단은 stderr로 보냅니다."""
-    output = sys.stdout
+    # Python print뿐 아니라 네이티브 코덱이 fd 1에 남기는 진단도 분리합니다.
+    stdout_fd = sys.stdout.fileno()
+    output = os.fdopen(os.dup(stdout_fd), "w", encoding="utf-8", buffering=1)
     worker = Worker(output)
-    with contextlib.redirect_stdout(sys.stderr):
-        try:
-            for line in sys.stdin:
-                worker.handle(line)
-        finally:
-            worker.finish()
+    def stop(_signum: int, _frame: object) -> None:
+        # 앱 종료 시에도 현재 파일의 원자 저장을 마친 뒤 자식 프로세스를 정리합니다.
+        worker.cancel.set()
+        raise SystemExit(0)
+
+    previous = {number: signal.signal(number, stop) for number in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        sys.stdout.flush()
+        os.dup2(sys.stderr.fileno(), stdout_fd)
+        with contextlib.redirect_stdout(sys.stderr):
+            try:
+                for line in sys.stdin:
+                    worker.handle(line)
+            finally:
+                worker.finish()
+    finally:
+        os.dup2(output.fileno(), stdout_fd)
+        output.close()
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 if __name__ == "__main__":
