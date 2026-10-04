@@ -72,8 +72,8 @@ def validate(app: Path) -> None:
                     path,
                     target,
                 )
-        if dependency.startswith("@rpath/"):
-            assert Path(dependency).name in bundled_names, (path, dependency)
+            if dependency.startswith("@rpath/"):
+                assert Path(dependency).name in bundled_names, (path, dependency)
         load_commands = output("otool", "-l", str(path))
         for minimum in re.findall(
             r"(?:cmd LC_BUILD_VERSION[\s\S]*?minos |cmd LC_VERSION_MIN_MACOSX[\s\S]*?version )(\d+\.\d+(?:\.\d+)?)",
