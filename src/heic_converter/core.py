@@ -39,6 +39,8 @@ class ConversionResult:
 
     source: Path
     destination: Path
+    hdr_applied: bool = False
+    sdr_reason: str | None = None
 
 
 def natural_sort_key(
@@ -439,7 +441,15 @@ def convert_image(
                 overwrite=overwrite,
                 write=lambda path: _save_hdr_png(source, Path(path), metadata_kwargs),
             )
-            return ConversionResult(source=source, destination=destination)
+            return ConversionResult(source=source, destination=destination, hdr_applied=True)
+        if output_format == "jpeg":
+            sdr_reason = "JPEG 출력은 SDR로 처리합니다."
+        elif not has_hdr_gain_map:
+            sdr_reason = "지원하는 Apple HDR 게인 맵이 없습니다."
+        elif original_orientation != 1:
+            sdr_reason = "방향 보정이 필요한 입력은 SDR로 처리합니다."
+        else:
+            sdr_reason = "HDR PNG에는 macOS 15 이상이 필요합니다."
         converted = _prepare_for_output(image, output_format)
         xmp = metadata_kwargs.pop("xmp", None)
         save_kwargs: dict[str, object] = {
@@ -458,4 +468,4 @@ def convert_image(
                 png_info.add_itxt("XML:com.adobe.xmp", xmp_text)
                 save_kwargs["pnginfo"] = png_info
         _atomic_save(converted, destination, overwrite=overwrite, **save_kwargs)
-    return ConversionResult(source=source, destination=destination)
+    return ConversionResult(source=source, destination=destination, sdr_reason=sdr_reason)
