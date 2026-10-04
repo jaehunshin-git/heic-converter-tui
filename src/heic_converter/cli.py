@@ -13,12 +13,9 @@ from .core import (
     ConflictMode,
     MetadataMode,
     OutputFormat,
-    choose_destination,
     convert_image,
-    discover_heic_files,
-    is_relative_to,
-    plan_output_path,
 )
+from .service import ConversionOptions, ValidationError, prepare_directory, run_batch
 from .tui import TuiConfig, collect_tui_config
 
 app = typer.Typer(
@@ -72,17 +69,14 @@ def _validate_option_values(
 ) -> tuple[str, str]:
     """공통 옵션을 검증하고 정규화된 정책 값을 반환합니다."""
 
-    metadata_value = metadata.casefold()
-    conflict_value = on_conflict.casefold()
-    if metadata_value not in {"safe", "preserve", "strip"}:
-        _invalid("--metadata 값은 safe, preserve, strip 중 하나여야 합니다.")
-    if conflict_value not in {"rename", "skip", "overwrite", "error"}:
-        _invalid("--on-conflict 값은 rename, skip, overwrite, error 중 하나여야 합니다.")
-    if not 1 <= jpeg_quality <= 100:
-        _invalid("--jpeg-quality 값은 1에서 100 사이여야 합니다.")
-    if not 0 <= png_compression <= 9:
-        _invalid("--png-compression 값은 0에서 9 사이여야 합니다.")
-    return metadata_value, conflict_value
+    try:
+        options = ConversionOptions(
+            jpeg_quality=jpeg_quality, png_compression=png_compression,
+            metadata=metadata, on_conflict=on_conflict,
+        )
+    except ValidationError as exc:
+        _invalid(str(exc))
+    return options.metadata, options.on_conflict
 
 
 def _open_tui(
@@ -179,67 +173,30 @@ def main(
     metadata_value = metadata.casefold()
     conflict_value = on_conflict.casefold()
 
-    source_root = input_path.expanduser().resolve()
-    destination_root = output_path.expanduser().resolve()
-    if not source_root.exists():
-        _invalid(f"입력 경로를 찾을 수 없습니다: {input_path}")
-    if not source_root.is_dir():
-        _invalid(f"입력 경로는 디렉터리여야 합니다: {input_path}")
-    if destination_root.exists() and not destination_root.is_dir():
-        _invalid(f"출력 경로는 디렉터리여야 합니다: {output_path}")
-    if source_root == destination_root:
-        _invalid("출력 디렉터리는 입력 디렉터리와 달라야 합니다.")
+    try:
+        options = ConversionOptions(
+            output_format=output_format, jpeg_quality=jpeg_quality,
+            png_compression=png_compression, metadata=metadata_value,
+            on_conflict=conflict_value,
+        )
+        job = prepare_directory(input_path, output_path, options, recursive=recursive)
+    except ValidationError as exc:
+        _invalid(str(exc))
+    console.print(f"발견한 HEIC 파일: {len(job.files)}개")
 
-    excluded = destination_root if is_relative_to(destination_root, source_root) else None
-    files = discover_heic_files(source_root, recursive=recursive, excluded_directory=excluded)
-    if not files:
-        _invalid(f"입력 디렉터리에서 .heic 파일을 찾지 못했습니다: {input_path}")
-    console.print(f"발견한 HEIC 파일: {len(files)}개")
+    def show_event(event: str, fields: object) -> None:
+        values = cast(dict, fields)
+        if event == "file_succeeded":
+            console.print(f"변환: {values['source']} → {values['destination']}")
+        elif event == "file_skipped":
+            console.print(f"건너뜀: {values['source']}")
+        elif event == "file_failed":
+            error_console.print(f"[red]실패:[/red] {values['source']} — {values['error']}")
 
-    succeeded = skipped = failed = 0
-    reserved: set[Path] = set()
-    for source in files:
-        proposed = plan_output_path(source, source_root, destination_root, output_format)
-        try:
-            while True:
-                destination = choose_destination(
-                    proposed,
-                    cast(ConflictMode, conflict_value),
-                    reserved=reserved,
-                )
-                if destination is None:
-                    skipped += 1
-                    console.print(f"건너뜀: {source}")
-                    break
-                try:
-                    convert_image(
-                        source,
-                        destination,
-                        output_format=output_format,
-                        jpeg_quality=jpeg_quality,
-                        png_compression=png_compression,
-                        metadata=cast(MetadataMode, metadata_value),
-                        overwrite=conflict_value == "overwrite",
-                    )
-                except FileExistsError:
-                    # 계획 뒤 다른 프로세스가 파일을 만들었을 때도 덮어쓰지 않는다.
-                    if conflict_value == "rename":
-                        continue
-                    if conflict_value == "skip":
-                        skipped += 1
-                        console.print(f"건너뜀: {source}")
-                        break
-                    raise
-                succeeded += 1
-                console.print(f"변환: {source} → {destination}")
-                break
-        except Exception as exc:  # noqa: BLE001 - 파일 단위 오류 후에도 계속 처리해야 합니다.
-            failed += 1
-            error_console.print(f"[red]실패:[/red] {source} — {exc}")
-
-    console.print(f"요약: 성공 {succeeded}개, 건너뜀 {skipped}개, 실패 {failed}개")
-    if failed:
-        raise typer.Exit(code=1)
+    result = run_batch(job, emit=show_event, converter=convert_image)
+    console.print(f"요약: 성공 {result.succeeded}개, 건너뜀 {result.skipped}개, 실패 {result.failed}개")
+    if result.exit_code:
+        raise typer.Exit(code=result.exit_code)
 
 
 def run() -> None:
