@@ -88,3 +88,67 @@ def test_prepared_cancel_and_rejected_files_are_reported(tmp_path):
     records = events(output)
     assert len(records[0]["rejected"]) == 1 and records[0]["total"] == 0
     assert records[1]["event"] == "cancelled"
+
+
+def test_app_termination_signal_finishes_current_file_and_stops_next(tmp_path, heic_factory):
+    import signal
+
+    files = [heic_factory(tmp_path / f"{index}.heic") for index in range(2)]
+    # 신호를 보내는 동안 실제 저장이 진행 중임을 보장하는 합성 지연입니다.
+    script = """
+import time
+from heic_converter import worker
+from heic_converter.service import run_batch
+from heic_converter.core import convert_image
+
+def convert(*args, **kwargs):
+    time.sleep(0.3)
+    return convert_image(*args, **kwargs)
+
+def batch(*args, **kwargs):
+    return run_batch(*args, converter=convert, **kwargs)
+
+worker.run_batch = batch
+worker.main()
+"""
+    with subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+        process.stdin.write(request("prepare", files=[str(path) for path in files],
+                                    output_directory=str(tmp_path / "out")) + "\n")
+        process.stdin.write(request("run") + "\n")
+        process.stdin.flush()
+        assert json.loads(process.stdout.readline())["event"] == "prepared"
+        assert json.loads(process.stdout.readline())["event"] == "file_started"
+        process.send_signal(signal.SIGTERM)
+        output, diagnostic = process.communicate(timeout=10)
+        assert process.returncode == 0, diagnostic
+        records = [json.loads(line) for line in output.splitlines()]
+        assert [record["event"] for record in records] == ["file_succeeded", "cancelled"]
+        assert records[-1]["succeeded"] == 1 and records[-1]["remaining"] == [str(files[1])]
+        assert (tmp_path / "out" / "0.jpeg").is_file()
+        assert not (tmp_path / "out" / "1.jpeg").exists()
+        assert not list((tmp_path / "out").glob(".*"))
+
+
+def test_python_and_native_diagnostics_do_not_pollute_json_stdout(tmp_path):
+    script = """
+import os
+from heic_converter import worker
+original = worker.Worker.handle
+
+def diagnostic(self, line):
+    print("Python 진단")
+    os.write(1, b"native diagnostic\\n")
+    return original(self, line)
+
+worker.Worker.handle = diagnostic
+worker.main()
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", script],
+        input=request("prepare", files=[], output_directory=str(tmp_path)) + "\n",
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert process.returncode == 0
+    assert json.loads(process.stdout)["event"] == "prepared"
+    assert "Python 진단" in process.stderr and "native diagnostic" in process.stderr
