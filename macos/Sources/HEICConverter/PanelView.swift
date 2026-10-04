@@ -118,7 +118,7 @@ struct PanelView: View {
                     Text("품질").font(.caption).foregroundStyle(.secondary)
                     Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
                         ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
-                    }.pickerStyle(.segmented)
+                    }.pickerStyle(.segmented).labelsHidden()
                 }
                 if model.settings.options.qualityPreset == .raw {
                     Text("Raw는 최대 JPEG 품질입니다. JPEG의 손실 압축은 유지됩니다.")
