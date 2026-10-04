@@ -47,9 +47,13 @@ final class DropPanel: NSPanel {
         panel.hasShadow = true
         panel.minSize = NSSize(width: 480, height: 600)
         panel.delegate = self
-        panel.contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
+        let contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
             self?.panel.orderOut(nil)
         }))
+        // 스크롤 콘텐츠의 intrinsic 높이가 창 크기를 덮어쓰지 않도록 한다.
+        contentView.sizingOptions = []
+        panel.contentView = contentView
+        panel.setContentSize(NSSize(width: 520, height: 650))
         observeAnchorChanges()
         countSubscription = model.$queue.sink { [weak self] queue in
             self?.statusItem.button?.title = " \(queue.waitingCount)"
@@ -117,7 +121,9 @@ final class DropPanel: NSPanel {
         let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
         panel.minSize = NSSize(width: min(480, available.width), height: min(600, available.height))
         panel.maxSize = available.size
-        let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: panel.frame.size)
+        let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
+                          height: max(panel.frame.height, panel.minSize.height))
+        let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
     }
 
@@ -126,10 +132,12 @@ final class DropPanel: NSPanel {
     private func panelPlacementSmokeTest() -> Bool {
         guard let geometry = anchorGeometry() else { return false }
         let frame = panel.frame
+        let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
         let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: frame.size)
         let passed = geometry.visibleFrame.contains(frame) && frame.maxY <= geometry.anchor.minY
+            && frame.width >= min(480, available.width) && frame.height >= min(600, available.height)
             && abs(frame.minX - expected.minX) < 1 && abs(frame.maxY - expected.maxY) < 1
-        if passed { print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame)") }
+        print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame), 배치 검증: \(passed)")
         return passed
     }
 
