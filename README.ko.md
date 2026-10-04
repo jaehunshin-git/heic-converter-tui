@@ -1,4 +1,4 @@
-# HEIC Converter TUI
+# HEIC Converter
 
 [![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
 [![다운로드](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
@@ -7,12 +7,16 @@
 ![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
 ![로컬 처리](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
 
-> 방향키로 설정하고, 명령어로 자동화하는 macOS 우선 HEIC 일괄 변환기
+> 메뉴 막대에서 변환하고, 방향키로 설정하고, 명령어로 자동화하는 HEIC 변환기
 
 `heic-converter-tui`는 디렉터리의 `.heic` 사진을 JPEG 또는 PNG로 변환하는
 Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 Enter로 조작하는
 대화형 화면이 열리고, 옵션을 지정하면 스크립트와 자동화 환경에서도 사용할 수
 있습니다.
+
+0.3.0에는 **HEIC Converter** 메뉴 막대 앱도 포함됩니다. Apple Silicon,
+macOS 15 이상을 지원하며, Python 런타임과 이미지 코덱이 앱에 포함되어
+앱 사용자에게 별도 Python 설치가 필요하지 않습니다.
 
 사진은 외부 서비스로 전송되지 않으며 원본 파일도 변경하지 않습니다. 변환 결과는
 별도의 출력 디렉터리에 저장됩니다. 패키지는
@@ -23,6 +27,9 @@ Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 
 
 | 기능 | 설명 |
 | --- | --- |
+| 메뉴 막대 앱 | 다른 앱으로 전환해도 고정 드롭 패널을 유지하고, 패널을 숨겨도 변환과 클립보드 감지를 계속합니다. |
+| 파일 대기 목록 | HEIC를 드롭한 뒤 지금 변환 또는 대기 목록에 추가를 선택하고 파일별 결과를 확인합니다. 드롭만으로 변환하지 않습니다. |
+| Finder 클립보드 | 백그라운드에서 복사한 로컬 파일 URL을 감지하며, 버튼이나 ⌘V로 직접 붙여넣을 수 있습니다. 감지 설정을 기억합니다. |
 | 다국어 방향키 TUI | 한국어 또는 English를 먼저 고른 뒤 입력·출력 경로, 형식, 품질, 메타데이터 및 충돌 정책을 순서대로 선택합니다. |
 | 자동화용 CLI | 동일한 기능을 명령어 옵션으로 지정해 비대화형 환경에서 실행할 수 있습니다. |
 | JPEG·PNG 출력 | JPEG는 품질을, PNG는 압축 수준을 조정할 수 있습니다. |
@@ -47,6 +54,7 @@ Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 
 | 분류 | 기술 |
 | --- | --- |
 | 실행 환경 | Python 3.11+ |
+| macOS 앱 | SwiftUI, AppKit NSPanel, 내장 JSONL worker |
 | 명령줄 | Typer, Rich |
 | 터미널 UI | Questionary |
 | 이미지 처리 | Pillow, pillow-heif, macOS ImageIO(PyObjC) |
@@ -57,9 +65,14 @@ Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 
 ```text
 heic-converter/
 ├── src/heic_converter/
-│   ├── cli.py              # 명령어 검증, 변환 실행 및 결과 요약
+│   ├── cli.py              # 명령어 옵션, 진행 및 결과 요약
 │   ├── core.py             # 파일 검색, 경로 계획, 이미지 변환 및 원자적 저장
+│   ├── service.py          # 공통 배치 서비스와 명시적 파일 목록 입력
+│   ├── worker.py           # 버전이 있는 JSONL 요청과 이벤트
 │   └── tui.py              # 방향키 기반 대화형 설정 화면
+├── macos/                  # Swift Package 앱과 테스트
+├── packaging/macos/        # 고정 worker 빌드, 서명 및 DMG 검증
+├── docs/                   # 한국어 빌드 및 검증 문서
 ├── tests/                  # CLI, TUI, 이미지 변환 및 파일 처리 테스트
 ├── pyproject.toml          # 패키지 메타데이터와 의존성
 └── uv.lock                 # 재현 가능한 개발 의존성 잠금 파일
@@ -67,7 +80,43 @@ heic-converter/
 
 ## 🚀 시작하기
 
-### 요구 사항
+### 독립 실행 macOS 앱
+
+**Apple Silicon arm64, macOS 15 이상**을 지원합니다. Intel 및 Universal2는
+첫 지원 범위에 포함하지 않습니다. 릴리스 앱은
+[GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)에서
+DMG와 SHA-256 체크섬으로 배포합니다. 아직 릴리스되지 않은 소스 체크아웃은
+[빌드 안내](docs/macos-build-release.md)에 따라 앱을 만들 수 있습니다.
+
+1. 다운로드한 DMG의 SHA-256 체크섬을 확인합니다.
+2. DMG를 열고 **HEIC Converter.app**을 **Applications**로 옮깁니다.
+3. 앱을 실행하고 메뉴 막대 아이콘을 클릭해 드롭 패널을 엽니다.
+
+첫 버전은 **ad-hoc 서명**을 사용하며 Apple 공증을 받지 않습니다. 최초 실행이
+차단되면 앱 실행을 시도한 후 **시스템 설정 → 개인정보 보호 및 보안 → 확인 없이
+열기**에서 이 앱의 실행을 허용합니다.
+[Apple의 안내](https://support.apple.com/ko-kr/102445)를 참고하세요.
+DMG 포장이 Gatekeeper 차단을 없애지는 않습니다.
+
+로컬 `.heic` 파일을 드롭하고 설정을 확인한 다음 **지금 변환** 또는 **대기 목록에
+추가**를 선택합니다. 대기 항목은 변환 시작을 눌러야 실행됩니다. Finder에서 복사한
+파일과 직접 붙여넣은 파일은 패널을 열거나 변환하지 않고 대기 목록에 추가됩니다.
+패널을 닫아도 앱, 감지 및 진행 중인 작업은 유지됩니다. 앱 종료는 패널에서 선택합니다.
+
+기본 저장 위치는 `~/Downloads/HEIC Converter`이며 첫 변환 때 생성합니다.
+기본 설정은 JPEG, 품질 90, PNG 압축 6, 메타데이터 `safe`, 충돌 정책 `rename`입니다.
+앱은 지정 폴더에 결과를 모으며 CLI는 기존 디렉터리 구조를 보존합니다. 설정과 저장
+위치만 기억하고 파일 목록 및 클립보드 이력은 저장하지 않습니다. 완료 항목도 정리하기
+전에는 중복 추가하지 않으며 제거하면 다시 입력할 수 있습니다. 취소하면 현재 파일을
+마친 뒤 실행하지 않은 파일을 대기 상태로 돌립니다. 변환 중 들어온 파일이나 설정
+변경은 이미 예약한 작업에 영향을 주지 않습니다.
+
+확장자는 대소문자를 구분하지 않는 `.heic`로 제한합니다. 폴더, 심볼릭 링크, 읽을 수
+없는 파일, `.heif`, 일반 클립보드 이미지 및 Photos 파일 약속은 제외하고 이유를
+표시합니다. 클립보드를 0.75초마다 확인하며 시작 및 감지 재개 때 기존 내용은 추가하지
+않습니다. 접근이 거부되면 자동 읽기를 중단하고 드롭 또는 직접 붙여넣기를 안내합니다.
+
+### CLI/TUI 요구 사항
 
 - Python 3.11 이상
 - macOS 우선 지원
@@ -241,6 +290,10 @@ macOS 15 이상에서는 Apple HDR 게인 맵이 포함된 HEIC를 16비트 HDR 
 변환합니다. HDR 화면에서 원본의 밝기와 색 표현을 유지하기 위해 PNG에 HDR
 색상 프로파일을 기록합니다. 다른 환경에서는 HEIC의 기본 SDR 이미지를 PNG로
 저장하므로 HDR 화면에서 원본과 다르게 보일 수 있습니다. JPEG 출력은 SDR입니다.
+앱의 파일별 결과에는 HDR 적용 여부와 SDR 처리 사유를 표시합니다. HDR 처리는
+원본 게인 맵과 ImageIO API 지원에 따라 달라지며 모든 HEIC의 HDR 보존을 보장하지
+않습니다. PNG 압축 설정은 Pillow SDR 경로에 적용하고 네이티브 HDR 인코더는 자체
+압축을 사용합니다.
 
 ### 파일 검색과 충돌 처리
 
@@ -265,7 +318,7 @@ HEIC의 기본 정지 이미지 한 장만 JPEG 또는 PNG로 변환합니다. �
 - OCR 및 텍스트 추출
 - Live Photo의 동영상 처리
 - 기본 정지 이미지 이외의 보조 이미지, 시퀀스 또는 동영상 추출
-- 단일 파일 입력
+- CLI의 단일 파일 입력(앱은 명시적인 파일 목록을 지원)
 
 ### 종료 코드
 
