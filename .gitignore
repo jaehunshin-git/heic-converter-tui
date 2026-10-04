@@ -2,3 +2,14 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+.ruff_cache/
+dist/
+build/
+macos/.build/
+macos/.swiftpm/
+packaging/macos/.venv/
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+.DS_Store
