@@ -80,8 +80,23 @@ def test_actual_hdr_png_preserves_profile_and_metadata_policy(
     with Image.open(output) as image:
         image.load()
         assert image.size == (16, 16)
-        profile = ImageCms.ImageCmsProfile(io.BytesIO(image.info["icc_profile"]))
-        assert "PQ" in ImageCms.getProfileDescription(profile)
+        if image.info.get("icc_profile"):
+            profile = ImageCms.ImageCmsProfile(io.BytesIO(image.info["icc_profile"]))
+            assert "PQ" in ImageCms.getProfileDescription(profile)
+        else:
+            # macOS 15는 ISO HDR 색상을 ICC 대신 PNG cICP로 기록할 수 있습니다.
+            # PNG3의 RGB/full-range 및 SMPTE ST 2084(PQ) 전달 함수를 검증합니다.
+            chunks = {}
+            content = output.read_bytes()
+            offset = 8
+            while offset < len(content):
+                size = int.from_bytes(content[offset:offset + 4], "big")
+                kind = content[offset + 4:offset + 8]
+                chunks[kind] = content[offset + 8:offset + 8 + size]
+                offset += 12 + size
+            assert b"cICP" in chunks, list(chunks)
+            assert len(chunks[b"cICP"]) == 4
+            assert chunks[b"cICP"][1:] == bytes([16, 0, 1]), chunks[b"cICP"]
         assert bool(image.getexif().get(34853)) == (metadata == "preserve")
         if metadata == "strip":
             assert not image.getexif() and not image.info.get("xmp")

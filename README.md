@@ -282,7 +282,7 @@ value within the ranges above.
 | --- | --- |
 | `safe` | Removes GPS and XMP while retaining other EXIF data and ICC profiles where possible. |
 | `preserve` | Retains EXIF, XMP, and ICC profiles where supported by the conversion libraries. |
-| `strip` | Removes EXIF and XMP. HDR PNG retains the ICC profile required for correct color rendering. |
+| `strip` | Removes EXIF and XMP. HDR PNG retains its ICC profile or CICP color signaling required for correct rendering. |
 
 The converter applies image orientation to pixels and, when metadata is written,
 normalizes the output EXIF orientation value to `1`. JPEG does not support alpha,
