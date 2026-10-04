@@ -1,0 +1,60 @@
+name: macOS 앱 및 Python 검증
+
+on:
+  push:
+    branches: [main, feat/2-macos-menu-bar-app]
+    tags: [v0.3.0]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Apple Silicon ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.11
+      - name: Python 빌드 환경 설치
+        run: |
+          test "$(uname -m)" = arm64
+          uv python install 3.12.12
+          uv venv --python 3.12.12 .venv-app-build
+          uv pip sync --python .venv-app-build/bin/python --require-hashes packaging/macos/requirements.lock
+      - name: Python 정적 검사와 회귀 테스트
+        run: |
+          .venv-app-build/bin/ruff check src tests packaging/macos
+          PYTHONPATH=src .venv-app-build/bin/python -m pytest
+      - name: Swift 빌드와 회귀 테스트
+        run: |
+          swift build --package-path macos
+          swift test --package-path macos
+      - name: 앱과 DMG 조립 및 설치본 검증
+        run: bash packaging/macos/build.sh
+      - name: Python 배포 파일 빌드와 허용 목록 검증
+        run: |
+          .venv-app-build/bin/python -m build --no-isolation
+          .venv-app-build/bin/python packaging/macos/validate_python_dist.py dist
+      - name: 검증한 산출물 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: heic-converter-0.3.0-${{ matrix.os }}-arm64
+          path: |
+            dist/macos/HEIC-Converter-0.3.0-arm64.dmg
+            dist/macos/HEIC-Converter-0.3.0-arm64.dmg.sha256
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
