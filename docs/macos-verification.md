@@ -3,8 +3,8 @@
 - 연결 이슈: [#2](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
 - 검증일: 2026-10-05
 - 기능 버전: 앱·wheel·sdist 0.3.0
-- CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37216718123)
-- CI 검증 커밋: `9a3eab5b786e589cba66b03cac958f1a5145eafb`
+- CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37219168958)
+- CI 검증 커밋: `5e204cebe3f8cfff9cdeb6be99eb2d6e6714997a`
 - 로컬: macOS 27.2, arm64, 앱 빌드 Python 3.12.12
 
 ## 기능과 근거
@@ -17,12 +17,35 @@
 | Finder·직접 붙여넣기·숨긴 상태 감지·중복·재시작·토글·접근 거부 | 실제 Finder 복사→자동 실행 없이 대기 항목 추가 확인. 이름 있는 임시 pasteboard를 사용한 앱 smoke, ClipboardGate 및 설정 저장 Swift 회귀. 타이머는 패널과 독립적으로 실행 |
 | 변환 중 추가·옵션 고정·취소·부분 실패·재시도·완료 정리 | Swift 대기열 회귀와 Python 배치/worker 회귀. 현재 파일 완료 뒤 취소, 완료 후 늦은 취소가 다음 작업을 방해하지 않는 회귀 |
 | 공백·한글 경로·권한·삭제·심볼릭 링크·동일 이름·충돌 정책 | Python 서비스/CLI/worker 및 Swift 입력 검증. 패키징 smoke의 실제 공백·한글 임시 경로. 파일 링크 거절과 macOS 시스템 경로 별칭의 실제 경로 중복 제거 |
-| 기존 CLI/TUI·worker 프로토콜·종료·취소·원자적 저장 | Python 83개 통과, Ruff 통과. Swift XCTest 6개 통과. SIGTERM 현재 파일 완료, EOF 완료 대기, 네이티브 stdout 진단 분리 |
+| 기존 CLI/TUI·worker 프로토콜·종료·취소·원자적 저장 | Python 83개 통과, Ruff 통과. Swift XCTest 15개 통과. SIGTERM 현재 파일 완료, EOF 완료 대기, 네이티브 stdout 진단 분리 |
 | SDR/HDR·메타데이터·색상 프로파일 | 개인 사진 없이 합성 Apple 게인 맵 생성. 실제 16비트 HDR PNG/PQ 색상 정보, safe/preserve/strip, JPEG SDR, 원본 바이트 보존 검증 |
 | macOS 15와 현재 지원 OS의 arm64 앱·독립 실행 설치 | CI macOS 15·26에서 앱 실행/DMG 검증 성공. 로컬 macOS 27.2도 성공. 임시 설치 위치의 복사본을 사용자 Python 없는 PATH/HOME으로 실행하여 실제 HEIC JPEG·PNG·HDR 변환 |
 | 네이티브 아키텍처·로더·서명·DMG·체크섬 | Mach-O 44개 arm64, 최소 OS, 로더 상대 경로, 각 코드 및 앱 ad-hoc 서명 검사. DMG 읽기 전용 마운트, 앱+Applications 링크, SHA-256 및 설치 복사본 재검증 |
 | 개인정보 배제·버전·영문 PyPI 메타데이터 | 앱/DMG와 wheel/sdist 허용 목록 검사. METADATA 및 PKG-INFO 버전·Summary·영문 본문 검사, Twine 통과. 기존 input/output 개인 자료 미사용·미포함 |
 | 최종 산출물과 재현 가능한 절차 | 독립 앱, arm64 DMG·체크섬, wheel·sdist, [빌드/배포 문서](macos-build-release.md), [worker 프로토콜](macos-worker-protocol.md) |
+
+## 메뉴 패널과 품질 UI 개선 검증
+
+- JPEG 품질을 Low(60), Medium(80), High(90), Raw(100) 네 단계로 선택한다.
+  Raw는 최대 JPEG 품질이며 손실 압축을 유지한다. 네 프리셋의 worker 수치 전달,
+  기존 설정 유지, 경계값 및 예약 작업 설정 고정을 XCTest 4개로 검증했다.
+- 메뉴 아이콘의 실제 화면 좌표를 기준으로 패널을 바로 아래에 배치한다. 화면 양끝,
+  음수 원점의 보조 화면, Dock, 노치, 작은 화면과 크기 변경을 XCTest 5개로 검증했다.
+- 앱과 DMG 설치 복사본의 실제 패널 smoke에서 아이콘 `(1434, 1055, 37, 22)` 아래
+  패널 `(1192, 392, 520, 650)`을 확인했다. 화면 안에 있고 메뉴 막대를 덮지 않는지,
+  최소 크기와 반복 토글, 비활성화 후 유지, 닫기 후 재표시를 개별 검사했다.
+- 생성 직후 메뉴 아이콘 창의 임시 좌표 `(0, -11)`는 배치 기준에서 제외한다.
+  실제 메뉴 막대 배치를 최대 5초 기다리며, 준비 실패는 smoke 실패로 처리한다.
+  스크롤 콘텐츠의 intrinsic 크기가 패널을 1픽셀 높이로 줄이지 않도록 호스팅 크기
+  자동 반영을 해제했다. 초기 실패가 최종 검증으로 인정되지 않도록 최소 크기도 검사한다.
+- 실제 앱의 어두운 모드 화면에서 네 품질 버튼을 각각 선택하고 Raw 안내,
+  PNG 압축 컨트롤과 고정 푸터의 감지·저장 폴더·종료 버튼을 확인했다.
+  Glassmorphism은 macOS 기본 `NSVisualEffectView`, 반투명 카드와 둥근 테두리로
+  구현했다. 밝은 모드와 투명도 줄이기·높은 대비는 코드 경로를 검토했으며,
+  이번 화면 확인에서는 해당 모드의 시각 검증까지 완료하지 않았다.
+- 전체 Python 83개, Swift XCTest 15개와 Ruff가 로컬에서 통과했다. 앱과 DMG를
+  재조립하고 내장 worker의 합성 SDR/HDR 변환, 서명 및 설치 복사본을 검증했다.
+  두 README를 반영한 wheel/sdist도 다시 빌드하여 영어 메타데이터와 허용 목록을 확인했다.
 
 ## 검증 범위
 
@@ -47,7 +70,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-99d83caa79426ed8a0f05a7513fa27bf800c67b0bac6ebb514a83afd8f30c127
+cfb70d7e86468ae526b87314e6c71db1daaec6d85de4f4388f4d111e6264e5e6
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
