@@ -5,12 +5,17 @@ import ConverterKit
     var onEvent: ((WorkerEvent) -> Void)?
     var onFailure: ((String) -> Void)?
     private var process: Process?
+    private var stopping = false
     private var input: FileHandle?
     private var generation = UUID()
     private var buffer = JSONLineBuffer()
     private var diagnostics = ""
 
     func start() throws {
+        if stopping {
+            guard process?.isRunning != true else { throw WorkerFailure.stopping }
+            process = nil; stopping = false
+        }
         if process?.isRunning == true { return }
         guard let resources = Bundle.main.resourceURL else { throw WorkerFailure.unavailable }
         let executable = resources.appendingPathComponent("worker/heic-worker")
@@ -25,9 +30,13 @@ import ConverterKit
         let token = UUID(); generation = token; buffer = JSONLineBuffer(); diagnostics = ""
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
-            Task { @MainActor in
+            if data.isEmpty { handle.readabilityHandler = nil }
+            DispatchQueue.main.async {
                 guard let self, self.generation == token else { return }
+                if data.isEmpty {
+                    self.fail("worker의 출력 연결이 종료되었습니다.")
+                    return
+                }
                 do { for event in try self.buffer.append(data) { self.onEvent?(event) } }
                 catch { self.fail(error.localizedDescription) }
             }
@@ -40,12 +49,6 @@ import ConverterKit
                 self.diagnostics = String((self.diagnostics + (String(data: data, encoding: .utf8) ?? "")).suffix(4096))
             }
         }
-        task.terminationHandler = { [weak self] task in
-            Task { @MainActor in
-                guard let self, self.generation == token else { return }
-                self.fail(WorkerFailure.exited(task.terminationStatus).localizedDescription)
-            }
-        }
         try task.run()
         process = task; input = stdin.fileHandleForWriting
     }
@@ -53,7 +56,7 @@ import ConverterKit
         guard let input, process?.isRunning == true else { throw WorkerFailure.unavailable }
         try input.write(contentsOf: request.line())
     }
-    private func fail(_ message: String) { stop(); onFailure?(message) }
+    func fail(_ message: String) { stop(); onFailure?(message) }
     func stop() {
         generation = UUID()
         try? input?.close(); input = nil
@@ -63,6 +66,7 @@ import ConverterKit
             process.terminationHandler = nil
             if process.isRunning { process.terminate() }
         }
-        process = nil
+        stopping = process?.isRunning == true
+        if !stopping { process = nil }
     }
 }

@@ -80,7 +80,7 @@ func smokeTest() -> Int32 {
     guard CGImageDestinationFinalize(encoder) else { return 1 }
     var settings = AppSettings()
     settings.outputDirectory = folder.appendingPathComponent("결과 폴더").path
-    let job = ConversionJob(files: [source.path], settings: settings)
+    let job = ConversionJob(files: [InputValidator.canonicalPath(source)], settings: settings)
     let process = Process()
     process.executableURL = resources.appendingPathComponent("worker/heic-worker")
     process.environment = ["PATH": "/usr/bin:/bin", "HOME": folder.path, "PYTHONUTF8": "1"]
@@ -99,6 +99,7 @@ func smokeTest() -> Int32 {
     try? input.fileHandleForWriting.close()
     if process.isRunning { process.terminate(); process.waitUntilExit() }
     let passed = state.succeeded
+    if !passed { fputs("worker smoke 검증 실패: \(state.failure)\n", stderr) }
     if passed { print("내장 worker 합성 HEIC 변환 및 프로토콜 확인 완료") }
     return passed ? 0 : 1
 }
@@ -110,6 +111,7 @@ final class SmokeState: @unchecked Sendable {
     private var prepared = false
     private var converted = false
     private var passed = false
+    private(set) var failure = "응답 없음 또는 시간 초과"
     private let job: ConversionJob
     private let input: FileHandle
     init(job: ConversionJob, input: FileHandle) { self.job = job; self.input = input }
@@ -119,10 +121,10 @@ final class SmokeState: @unchecked Sendable {
         guard !data.isEmpty else { done.signal(); return }
         do {
             for event in try buffer.append(data) {
-                guard event.jobID == job.id else { done.signal(); return }
+                guard event.jobID == job.id else { failure = "작업 ID 불일치"; done.signal(); return }
                 switch event.event {
                 case "prepared":
-                    guard event.files == job.files, event.total == 1, event.rejected?.isEmpty != false else { done.signal(); return }
+                    guard event.files == job.files, event.total == 1, event.rejected?.isEmpty != false else { failure = "준비 결과 불일치: 기대 \(job.files), 실제 \(String(describing: event.files)), \(String(describing: event.rejected))"; done.signal(); return }
                     prepared = true
                     try input.write(contentsOf: WorkerRequest(command: "run", job: job).line())
                 case "file_succeeded":
@@ -132,11 +134,11 @@ final class SmokeState: @unchecked Sendable {
                 case "completed":
                     passed = prepared && converted && event.succeeded == 1 && event.failed == 0
                     done.signal()
-                case "error", "file_failed", "cancelled": done.signal()
+                case "error", "file_failed", "cancelled": failure = event.message ?? event.error ?? event.event; done.signal()
                 default: break
                 }
             }
-        } catch { done.signal() }
+        } catch { failure = error.localizedDescription; done.signal() }
     }
 }
 
