@@ -152,3 +152,12 @@ worker.main()
     assert process.returncode == 0
     assert json.loads(process.stdout)["event"] == "prepared"
     assert "Python 진단" in process.stderr and "native diagnostic" in process.stderr
+
+
+def test_worker_does_not_resolve_input_against_working_directory(tmp_path):
+    output = io.StringIO()
+    session = worker.Worker(output)
+    session.handle(request("prepare", files=["relative.heic"], output_directory=str(tmp_path)))
+    session.handle(request("prepare", files=[], output_directory="relative-output"))
+    assert all(record["error_code"] == "invalid_request" for record in events(output))
+    assert session.job is None

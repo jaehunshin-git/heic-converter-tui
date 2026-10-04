@@ -127,3 +127,15 @@ def test_conflict_retry_replans_after_atomic_race(tmp_path, heic_factory):
 def test_options_reject_invalid_types_and_values(options):
     with pytest.raises(ValidationError):
         ConversionOptions(**options)
+
+
+def test_directory_alias_resolves_to_same_real_input(tmp_path, heic_factory):
+    folder = tmp_path / "real"
+    folder.mkdir()
+    source = heic_factory(folder / "photo.heic")
+    alias = tmp_path / "alias"
+    alias.symlink_to(folder, target_is_directory=True)
+    job = prepare_files([alias / source.name, source], tmp_path / "out", ConversionOptions())
+    assert job.files == (source,)
+    assert len(job.rejected) == 1 and "이미 입력" in job.rejected[0].reason
+    assert run_batch(job).succeeded == 1

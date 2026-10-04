@@ -72,6 +72,8 @@ class Worker:
                         raise ValidationError("files는 로컬 경로 문자열 배열이어야 합니다.")
                     if not isinstance(output, str) or not output:
                         raise ValidationError("output_directory 경로가 필요합니다.")
+                    if not Path(output).is_absolute() or any(not Path(path).is_absolute() for path in files):
+                        raise ValidationError("worker의 입력과 출력은 절대 경로여야 합니다.")
                     if not isinstance(values, dict):
                         raise ValidationError("options는 JSON 객체여야 합니다.")
                     self.job = prepare_files(

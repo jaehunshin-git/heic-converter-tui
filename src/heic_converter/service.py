@@ -127,8 +127,8 @@ def prepare_directory(
 
 def _validate_file(path: Path) -> Path:
     expanded = path.expanduser().absolute()
-    # 부모 디렉터리의 링크도 거절해 resolve 이후 링크 정보가 사라지지 않게 합니다.
-    if expanded.is_symlink() or any(parent.is_symlink() for parent in expanded.parents):
+    # macOS의 /tmp 같은 시스템 디렉터리 별칭은 허용하고 입력 파일의 링크만 제외합니다.
+    if expanded.is_symlink():
         raise ValidationError("심볼릭 링크는 입력할 수 없습니다.")
     info = expanded.stat()
     if not stat.S_ISREG(info.st_mode):
