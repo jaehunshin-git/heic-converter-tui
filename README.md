@@ -1,5 +1,12 @@
 # HEIC Converter TUI
 
+[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
+[![Downloads](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/LICENSE)
+![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
+![Local processing](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
+
 > A macOS-first batch HEIC converter: configure with arrow keys, automate with the CLI.
 
 `heic-converter-tui` converts `.heic` photos in a directory to JPEG or PNG. Run it

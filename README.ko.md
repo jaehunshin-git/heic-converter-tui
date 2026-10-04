@@ -1,5 +1,12 @@
 # HEIC Converter TUI
 
+[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
+[![다운로드](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![라이선스](https://img.shields.io/badge/License-MIT-yellow)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/LICENSE)
+![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
+![로컬 처리](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
+
 > 방향키로 설정하고, 명령어로 자동화하는 macOS 우선 HEIC 일괄 변환기
 
 `heic-converter-tui`는 디렉터리의 `.heic` 사진을 JPEG 또는 PNG로 변환하는
