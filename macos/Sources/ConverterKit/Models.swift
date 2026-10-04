@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct ConversionOptions: Codable, Equatable {
     public var outputFormat = "jpeg"
@@ -60,6 +61,11 @@ public struct InputRejection: Equatable {
 }
 
 public enum InputValidator {
+    public static func canonicalPath(_ url: URL) -> String {
+        guard let resolved = realpath(url.path, nil) else { return url.standardizedFileURL.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
     public static func validate(_ urls: [URL], excluding: Set<String> = []) -> (accepted: [URL], rejected: [InputRejection]) {
         var paths = excluding
         var accepted: [URL] = []
@@ -81,7 +87,7 @@ public enum InputValidator {
                     } else if !FileManager.default.isReadableFile(atPath: url.path) {
                         reason = "파일 읽기 권한이 없습니다."
                     } else {
-                        canonical = canonical.resolvingSymlinksInPath()
+                        canonical = URL(fileURLWithPath: canonicalPath(canonical))
                         if paths.contains(canonical.path) { reason = "이미 목록에 있는 파일입니다." }
                     }
                 } catch { reason = "파일이 없거나 읽을 수 없습니다: \(error.localizedDescription)" }

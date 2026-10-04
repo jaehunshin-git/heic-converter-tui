@@ -47,14 +47,40 @@ public struct WorkerEvent: Decodable {
         let event = try JSONDecoder().decode(Self.self, from: data)
         guard event.protocolVersion == 1 else { throw WorkerFailure.protocolMismatch }
         guard ["prepared", "file_started", "file_succeeded", "file_skipped", "file_failed", "completed", "cancelled", "error"].contains(event.event) else { throw WorkerFailure.invalidEvent }
+        guard !event.jobID.isEmpty else { throw WorkerFailure.invalidEvent }
+        switch event.event {
+        case "prepared":
+            guard let files = event.files, let rejected = event.rejected, let total = event.total,
+                  total >= 0, total == files.count, Set(files).count == files.count,
+                  rejected.allSatisfy({ !$0.source.isEmpty && !$0.reason.isEmpty }) else { throw WorkerFailure.invalidEvent }
+        case "file_started", "file_succeeded", "file_skipped", "file_failed":
+            guard let source = event.source, !source.isEmpty, let index = event.index,
+                  let total = event.total, index > 0, index <= total else { throw WorkerFailure.invalidEvent }
+            if event.event == "file_succeeded" {
+                guard let destination = event.destination, !destination.isEmpty, event.hdrApplied != nil else { throw WorkerFailure.invalidEvent }
+            }
+            if event.event == "file_failed" {
+                guard event.error != nil, event.errorCode != nil else { throw WorkerFailure.invalidEvent }
+            }
+        case "completed", "cancelled":
+            guard let succeeded = event.succeeded, let skipped = event.skipped, let failed = event.failed,
+                  let total = event.total, let remaining = event.remaining,
+                  min(succeeded, skipped, failed, total) >= 0,
+                  succeeded + skipped + failed + remaining.count == total,
+                  event.event != "completed" || remaining.isEmpty else { throw WorkerFailure.invalidEvent }
+        case "error":
+            guard event.errorCode != nil, event.message != nil else { throw WorkerFailure.invalidEvent }
+        default: throw WorkerFailure.invalidEvent
+        }
         return event
     }
 }
 
 public enum WorkerFailure: LocalizedError {
-    case unavailable, protocolMismatch, invalidEvent, exited(Int32)
+    case stopping, unavailable, protocolMismatch, invalidEvent, exited(Int32)
     public var errorDescription: String? {
         switch self {
+        case .stopping: return "이전 worker의 현재 파일 저장과 종료를 기다리고 있습니다. 잠시 후 다시 시작하세요."
         case .unavailable: return "앱에 포함된 변환 worker를 찾을 수 없습니다. 앱을 다시 설치하세요."
         case .protocolMismatch: return "앱과 worker의 프로토콜 버전이 다릅니다. 앱을 다시 설치하세요."
         case .invalidEvent: return "worker의 응답 형식이 올바르지 않습니다."

@@ -67,7 +67,7 @@ final class ConverterKitTests: XCTestCase {
         let directory = folder.appendingPathComponent("directory.heic")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         let result = InputValidator.validate([source, source, link, directory, folder.appendingPathComponent("gone.heic"), folder.appendingPathComponent("not.heif"), URL(string: "https://example.com/a.heic")!])
-        XCTAssertEqual(result.accepted, [source.resolvingSymlinksInPath()])
+        XCTAssertEqual(result.accepted, [URL(fileURLWithPath: InputValidator.canonicalPath(source))])
         XCTAssertEqual(result.rejected.count, 6)
         XCTAssertTrue(result.rejected.contains { $0.reason.contains("심볼릭") })
     }
@@ -78,7 +78,7 @@ final class ConverterKitTests: XCTestCase {
         XCTAssertEqual(request["protocol_version"] as? Int, 1)
         XCTAssertEqual(request["files"] as? [String], job.files)
         XCTAssertEqual((request["options"] as? [String: Any])?["jpeg_quality"] as? Int, 90)
-        let line = Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"completed\",\"succeeded\":1,\"remaining\":[]}\n".utf8)
+        let line = Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"completed\",\"succeeded\":1,\"skipped\":0,\"failed\":0,\"total\":1,\"remaining\":[]}\n".utf8)
         var buffer = JSONLineBuffer()
         XCTAssertTrue(try buffer.append(line.prefix(12)).isEmpty)
         let events = try buffer.append(line.dropFirst(12) + line)
@@ -87,6 +87,8 @@ final class ConverterKitTests: XCTestCase {
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":2,\"job_id\":\"test\",\"event\":\"prepared\"}".utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"unknown\"}".utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("not json".utf8)))
+        XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"completed\"}".utf8)))
+        XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"prepared\",\"files\":[],\"rejected\":[],\"total\":2}".utf8)))
     }
     func testSettingsPersistWithoutQueueHistory() throws {
         let name = "heic-converter-tests-\(UUID().uuidString)"

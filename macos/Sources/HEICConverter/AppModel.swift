@@ -86,7 +86,8 @@ import ConverterKit
         catch { queue.failActive(error.localizedDescription); message = error.localizedDescription }
     }
     private func receive(_ event: WorkerEvent) {
-        guard let job = queue.activeJob, job.id == event.jobID else { return }
+        guard let job = queue.activeJob else { return }
+        guard job.id == event.jobID else { worker.fail("worker 응답의 작업 ID가 일치하지 않습니다."); return }
         switch event.event {
         case "prepared":
             for rejection in event.rejected ?? [] { queue.update(path: rejection.source, status: .failed, detail: rejection.reason) }
@@ -100,6 +101,9 @@ import ConverterKit
             guard let path = event.source else { return }
             let status: FileStatus = event.event == "file_succeeded" ? .succeeded : event.event == "file_skipped" ? .skipped : .failed
             var detail = event.error.map { "\(event.errorCode ?? "conversion_error"): \($0)" }
+            if status == .failed, ["output_permission", "output_unavailable"].contains(event.errorCode ?? "") {
+                detail = (detail ?? "저장 실패") + " 저장 위치를 변경한 뒤 실패 파일을 재시도하세요."
+            }
             if status == .succeeded { detail = event.hdrApplied == true ? "HDR 적용" : event.sdrReason }
             if status == .skipped { detail = "동일한 이름의 결과가 있어 건너뛰었습니다." }
             queue.update(path: path, status: status, detail: detail, destination: event.destination)
@@ -108,7 +112,7 @@ import ConverterKit
             queue.finish(); cancelling = false; startNext()
         case "error":
             let error = "\(event.errorCode ?? "worker_error"): \(event.message ?? "작업을 시작하지 못했습니다.")"
-            queue.failActive(error); cancelling = false; message = error
+            queue.failActive(error); cancelling = false; message = error + " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
         default: break
         }
     }
