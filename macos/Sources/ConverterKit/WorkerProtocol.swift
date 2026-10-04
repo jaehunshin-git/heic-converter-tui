@@ -66,7 +66,9 @@ public struct WorkerEvent: Decodable {
             guard let succeeded = event.succeeded, let skipped = event.skipped, let failed = event.failed,
                   let total = event.total, let remaining = event.remaining,
                   min(succeeded, skipped, failed, total) >= 0,
-                  succeeded + skipped + failed + remaining.count == total,
+                  succeeded <= total, skipped <= total - succeeded,
+                  failed <= total - succeeded - skipped,
+                  remaining.count == total - succeeded - skipped - failed,
                   event.event != "completed" || remaining.isEmpty else { throw WorkerFailure.invalidEvent }
         case "error":
             guard event.errorCode != nil, event.message != nil else { throw WorkerFailure.invalidEvent }

@@ -6,6 +6,14 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class DropPanel: NSPanel {
+    var onPaste: (() -> Void)?
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "v" {
+            onPaste?(); return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -27,6 +35,7 @@ final class DropPanel: NSPanel {
         panel = DropPanel(contentRect: NSRect(x: 0, y: 0, width: 570, height: 760),
                           styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
         panel.title = "HEIC Converter"
+        panel.onPaste = { [weak self] in self?.model.paste() }
         panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.DropPanel")
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -40,7 +49,7 @@ final class DropPanel: NSPanel {
         togglePanel()
         if CommandLine.arguments.contains("--smoke-test") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-                var passed = panel.isVisible && !panel.hidesOnDeactivate && panel.level == .floating
+                var passed = panel.isVisible && !panel.hidesOnDeactivate && panel.level == .floating && modelInputSmokeTest()
                 togglePanel(); passed = passed && !panel.isVisible
                 togglePanel(); passed = passed && panel.isVisible
                 NSApp.deactivate()
@@ -63,6 +72,55 @@ final class DropPanel: NSPanel {
         model.shutdown()
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
     }
+}
+
+/// 이름이 지정된 임시 pasteboard와 별도 설정 저장소만 사용한다.
+@MainActor func modelInputSmokeTest() -> Bool {
+    let name = "heic-smoke-\(UUID().uuidString)"
+    let clipboard = NSPasteboard(name: NSPasteboard.Name(name))
+    guard let defaults = UserDefaults(suiteName: name) else { return false }
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    defer {
+        clipboard.releaseGlobally(); defaults.removePersistentDomain(forName: name)
+        try? FileManager.default.removeItem(at: folder)
+    }
+    do {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = folder.appendingPathComponent("첫 파일.heic")
+        let second = folder.appendingPathComponent("두 번째.HEIC")
+        try Data([1]).write(to: first); try Data([2]).write(to: second)
+        clipboard.writeObjects([first as NSURL])
+        let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+        defer { model.shutdown() }
+        model.pollClipboard()
+        guard model.queue.items.isEmpty else { return false } // 시작 이전의 복사를 무시한다.
+        model.stage([first, second])
+        guard model.staged.count == 2, model.queue.items.isEmpty else { return false }
+        model.staged.removeAll() // 드롭 후 취소한 파일은 다시 입력할 수 있다.
+        model.stage([first, second]); model.acceptStaged(convert: false)
+        guard model.queue.items.count == 2, !model.active else { return false }
+        model.paste()
+        guard model.queue.items.count == 2 else { return false }
+        model.queue.remove(InputValidator.canonicalPath(first))
+        model.paste()
+        guard model.queue.items.count == 2 else { return false }
+        model.setClipboard(false)
+        model.queue.remove(InputValidator.canonicalPath(second))
+        clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
+        model.pollClipboard()
+        guard model.queue.items.count == 1 else { return false }
+        model.setClipboard(true); model.pollClipboard()
+        guard model.queue.items.count == 1 else { return false } // 재개 시 기존 복사를 무시한다.
+        clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
+        model.pollClipboard()
+        guard model.queue.items.count == 2 else { return false }
+        model.settings.outputDirectory = folder.path
+        model.setClipboard(false)
+        guard AppSettings.load(from: defaults).outputDirectory == folder.path,
+              !AppSettings.load(from: defaults).clipboardEnabled else { return false }
+        print("드롭 선택·취소·중복·직접 붙여넣기·감지 재개·설정 기억 확인 완료")
+        return true
+    } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
 }
 
 /// 합성 HEIC만 사용하여 설치된 번들의 worker와 프로토콜을 실제 변환까지 확인한다.

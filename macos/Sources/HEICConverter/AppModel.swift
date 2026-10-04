@@ -3,7 +3,7 @@ import Combine
 import ConverterKit
 
 @MainActor final class AppModel: ObservableObject {
-    @Published var settings = AppSettings.load() { didSet { settings.save() } }
+    @Published var settings: AppSettings { didSet { settings.save(to: settingsStore) } }
     @Published var queue = QueueState()
     @Published var dropTargeted = false
     @Published var staged: [URL] = []
@@ -13,11 +13,16 @@ import ConverterKit
     @Published var cancelling = false
     private let worker = WorkerClient()
     private var timer: Timer?
-    private var gate = ClipboardGate(changeCount: NSPasteboard.general.changeCount)
+    private let pasteboard: NSPasteboard
+    private let settingsStore: UserDefaults
+    private var gate: ClipboardGate
     var waitingCount: Int { queue.waitingCount }
     var active: Bool { queue.activeJob != nil }
 
-    init(startClipboard: Bool = true) {
+    init(startClipboard: Bool = true, pasteboard: NSPasteboard = .general, defaults: UserDefaults = .standard) {
+        self.pasteboard = pasteboard; self.settingsStore = defaults
+        self.settings = AppSettings.load(from: defaults)
+        self.gate = ClipboardGate(changeCount: pasteboard.changeCount)
         worker.onEvent = { [weak self] event in self?.receive(event) }
         worker.onFailure = { [weak self] error in
             guard let self else { return }
@@ -31,11 +36,10 @@ import ConverterKit
     }
     func setClipboard(_ enabled: Bool) {
         settings.clipboardEnabled = enabled
-        gate.resume(changeCount: NSPasteboard.general.changeCount)
+        gate.resume(changeCount: pasteboard.changeCount)
         clipboardMessage = nil
     }
-    private func pollClipboard() {
-        let pasteboard = NSPasteboard.general
+    func pollClipboard() {
         var denied = false
         if #available(macOS 15.4, *) { denied = pasteboard.accessBehavior == .alwaysDeny }
         if gate.shouldRead(changeCount: pasteboard.changeCount, enabled: settings.clipboardEnabled, accessDenied: denied) {
@@ -45,8 +49,8 @@ import ConverterKit
     }
     func paste() { readClipboard(manual: true) }
     private func readClipboard(manual: Bool) {
-        let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        if manual { gate.resume(changeCount: NSPasteboard.general.changeCount) }
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        if manual { gate.resume(changeCount: pasteboard.changeCount) }
         guard !urls.isEmpty else {
             if manual { message = "붙여넣을 로컬 HEIC 파일이 없습니다. Finder에서 파일을 복사하세요." }
             return
@@ -78,12 +82,12 @@ import ConverterKit
             try worker.start()
             try worker.send(WorkerRequest(command: "prepare", job: job))
             message = "저장 위치와 \(job.files.count)개 파일을 확인하고 있습니다."
-        } catch { queue.failActive(error.localizedDescription); message = error.localizedDescription }
+        } catch { worker.fail(error.localizedDescription) }
     }
     func cancel() {
         guard let job = queue.activeJob, !cancelling else { return }
         do { try worker.send(WorkerRequest(command: "cancel", job: job)); cancelling = true; message = "현재 파일 저장 후 취소합니다." }
-        catch { queue.failActive(error.localizedDescription); message = error.localizedDescription }
+        catch { worker.fail(error.localizedDescription) }
     }
     private func receive(_ event: WorkerEvent) {
         guard let job = queue.activeJob else { return }
@@ -93,7 +97,7 @@ import ConverterKit
             for rejection in event.rejected ?? [] { queue.update(path: rejection.source, status: .failed, detail: rejection.reason) }
             if cancelling { return }
             do { try worker.send(WorkerRequest(command: "run", job: job)) }
-            catch { queue.failActive(error.localizedDescription); message = error.localizedDescription }
+            catch { worker.fail(error.localizedDescription) }
         case "file_started":
             if let path = event.source { queue.update(path: path, status: .running) }
             message = "\(event.index ?? 0)/\(event.total ?? job.files.count) 변환 중"
