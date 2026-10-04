@@ -7,6 +7,10 @@ public struct ConversionOptions: Codable, Equatable {
     public var pngCompression = 6
     public var metadata = "safe"
     public var onConflict = "rename"
+    public var qualityPreset: QualityPreset {
+        get { QualityPreset.nearest(to: jpegQuality) }
+        set { jpegQuality = newValue.jpegQuality }
+    }
     public init() {}
     enum CodingKeys: String, CodingKey {
         case outputFormat = "output_format", jpegQuality = "jpeg_quality"
