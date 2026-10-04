@@ -87,6 +87,8 @@ final class ConverterKitTests: XCTestCase {
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":2,\"job_id\":\"test\",\"event\":\"prepared\"}".utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"unknown\"}".utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("not json".utf8)))
+        let overflow = "{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"completed\",\"succeeded\":\(Int.max),\"skipped\":1,\"failed\":0,\"total\":\(Int.max),\"remaining\":[]}"
+        XCTAssertThrowsError(try WorkerEvent.decode(Data(overflow.utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"completed\"}".utf8)))
         XCTAssertThrowsError(try WorkerEvent.decode(Data("{\"protocol_version\":1,\"job_id\":\"test\",\"event\":\"prepared\",\"files\":[],\"rejected\":[],\"total\":2}".utf8)))
     }

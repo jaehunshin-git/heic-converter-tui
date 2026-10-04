@@ -58,6 +58,7 @@ import ConverterKit
     }
     func fail(_ message: String) { stop(); onFailure?(message) }
     func stop() {
+        if stopping { return }
         generation = UUID()
         try? input?.close(); input = nil
         if let process {
