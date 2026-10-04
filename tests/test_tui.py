@@ -307,8 +307,8 @@ def test_input_directory_validator_rejects_missing_path_and_regular_file(tmp_pat
     regular_file = tmp_path / "image.heic"
     regular_file.touch()
 
-    assert tui._input_directory_validator(str(tmp_path / "missing")) != True
-    assert tui._input_directory_validator(str(regular_file)) != True
+    assert tui._input_directory_validator(str(tmp_path / "missing")) is not True
+    assert tui._input_directory_validator(str(regular_file)) is not True
     assert tui._input_directory_validator(str(tmp_path)) is True
 
 
@@ -318,7 +318,7 @@ def test_output_directory_validator_rejects_existing_file(tmp_path):
     regular_file = tmp_path / "output"
     regular_file.touch()
 
-    assert tui._output_directory_validator(str(regular_file)) != True
+    assert tui._output_directory_validator(str(regular_file)) is not True
     assert tui._output_directory_validator(str(tmp_path / "new-output")) is True
 
 

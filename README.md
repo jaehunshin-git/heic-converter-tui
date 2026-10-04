@@ -332,3 +332,6 @@ JPEG or PNG. It does not support:
 ## License
 
 This project is distributed under the [MIT License](LICENSE).
+Bundled third-party components retain their own licenses, including the codec
+notices shipped with pillow-heif. See the app's
+`Contents/Resources/Licenses` for the Python runtime and library notices.
