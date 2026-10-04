@@ -161,3 +161,44 @@ def test_worker_does_not_resolve_input_against_working_directory(tmp_path):
     session.handle(request("prepare", files=[], output_directory="relative-output"))
     assert all(record["error_code"] == "invalid_request" for record in events(output))
     assert session.job is None
+
+
+def test_late_cancel_of_completed_job_does_not_disturb_next_job(tmp_path, heic_factory):
+    source = heic_factory(tmp_path / "photo.heic")
+    output = io.StringIO()
+    session = worker.Worker(output)
+    session.handle(request("prepare", files=[str(source)], output_directory=str(tmp_path / "first")))
+    session.handle(request("run"))
+    session.finish()
+    assert events(output)[-1]["event"] == "completed"
+    session.handle(request("prepare", job_id="next-job", files=[str(source)],
+                           output_directory=str(tmp_path / "next")))
+    before_cancel = output.getvalue()
+    session.handle(request("cancel"))
+    assert output.getvalue() == before_cancel
+    assert not session.cancel.is_set()
+    session.handle(request("run", job_id="next-job"))
+    session.finish()
+    assert events(output)[-1]["event"] == "completed"
+    assert events(output)[-1]["succeeded"] == 1
+    assert (tmp_path / "next" / "photo.jpeg").is_file()
+    # 종료 ID는 직전 작업 하나만 기억하며 실제 잘못된 요청은 계속 보고합니다.
+    session.handle(request("cancel"))
+    assert events(output)[-1]["error_code"] == "unknown_job"
+
+
+def test_repeated_cancel_is_idempotent_but_reused_active_id_can_be_cancelled(tmp_path):
+    output = io.StringIO()
+    session = worker.Worker(output)
+    session.handle(request("prepare", files=[], output_directory=str(tmp_path)))
+    session.handle(request("cancel"))
+    before_repeat = output.getvalue()
+    session.handle(request("cancel"))
+    assert output.getvalue() == before_repeat
+    session.handle(request("prepare", files=[], output_directory=str(tmp_path)))
+    session.handle(request("cancel"))
+    assert [record["event"] for record in events(output)] == [
+        "prepared", "cancelled", "prepared", "cancelled",
+    ]
+    session.handle(request("cancel", job_id="unknown-job"))
+    assert events(output)[-1]["error_code"] == "unknown_job"

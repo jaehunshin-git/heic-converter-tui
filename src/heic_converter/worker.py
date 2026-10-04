@@ -32,6 +32,7 @@ class Worker:
         self.state_lock = threading.Lock()
         self.job: PreparedJob | None = None
         self.job_id: str | None = None
+        self.last_finished_job_id: str | None = None
         self.thread: threading.Thread | None = None
         self.cancel = threading.Event()
 
@@ -88,10 +89,14 @@ class Worker:
                     })
                 elif command in {"run", "cancel"}:
                     if self.job is None or self.job_id != job_id:
+                        # 완료 이벤트와 교차한 이전 작업의 취소는 다음 작업에 영향을 주지 않습니다.
+                        if command == "cancel" and job_id == self.last_finished_job_id:
+                            return
                         self.error(job_id, "unknown_job", "준비한 작업을 찾을 수 없습니다.")
                     elif command == "cancel":
                         self.cancel.set()
                         if self.thread is None:
+                            self.last_finished_job_id = job_id
                             self.send("cancelled", job_id, {
                                 "succeeded": 0, "skipped": 0, "failed": 0,
                                 "total": len(self.job.files),
@@ -116,6 +121,7 @@ class Worker:
                     with self.state_lock:
                         self.job = None
                         self.thread = None
+                        self.last_finished_job_id = job_id
                         self.send(event, job_id, fields)
                 else:
                     self.send(event, job_id, fields)
