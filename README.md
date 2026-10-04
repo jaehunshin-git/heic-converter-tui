@@ -1,4 +1,4 @@
-# HEIC Converter TUI
+# HEIC Converter
 
 [![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
 [![Downloads](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
@@ -7,11 +7,15 @@
 ![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
 ![Local processing](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
 
-> A macOS-first batch HEIC converter: configure with arrow keys, automate with the CLI.
+> Convert locally from the macOS menu bar, configure with arrow keys, or automate with the CLI.
 
 `heic-converter-tui` converts `.heic` photos in a directory to JPEG or PNG. Run it
 without arguments for an interactive terminal UI driven by arrow keys and Enter,
 or provide options for scripts and other non-interactive environments.
+
+Version 0.3.0 also includes **HEIC Converter**, a standalone menu bar app for
+Apple Silicon Macs running macOS 15 or later. The app bundles its Python runtime
+and image codecs, so using the app does not require installing Python.
 
 Photos never leave your computer, source files are never modified, and converted
 files are written to a separate output directory. The package is available on
@@ -22,6 +26,9 @@ see [README.ko.md](README.ko.md).
 
 | Feature | Description |
 | --- | --- |
+| Menu bar app | Keep a floating drop panel open across focus changes; hide it without interrupting conversion or clipboard detection. |
+| File queue | Drop one or more HEIC files, choose Convert now or Add to queue, and inspect per-file results. Dropping never starts conversion automatically. |
+| Finder clipboard | Detect copied local file URLs in the background, or paste with the button or Command-V. Detection is optional and remembers your preference. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
 | JPEG and PNG output | Configure JPEG quality or PNG compression level. |
@@ -43,6 +50,7 @@ see [README.ko.md](README.ko.md).
 | Category | Technology |
 | --- | --- |
 | Runtime | Python 3.11+ |
+| macOS app | SwiftUI, AppKit NSPanel, bundled JSONL worker |
 | CLI | Typer, Rich |
 | TUI | Questionary |
 | Imaging | Pillow, pillow-heif, macOS ImageIO through PyObjC |
@@ -53,9 +61,14 @@ see [README.ko.md](README.ko.md).
 ```text
 heic-converter/
 ├── src/heic_converter/
-│   ├── cli.py              # CLI validation, conversion execution, and summary
+│   ├── cli.py              # CLI options, progress, and summary
 │   ├── core.py             # File discovery, path planning, conversion, atomic writes
+│   ├── service.py          # Shared batch service and explicit file-list input
+│   ├── worker.py           # Versioned JSONL requests and events
 │   └── tui.py              # Arrow-key interactive configuration UI
+├── macos/                  # Swift Package app and tests
+├── packaging/macos/        # Pinned worker build, signing, and DMG validation
+├── docs/                   # Korean build and verification documentation
 ├── tests/                  # CLI, TUI, image conversion, and file-handling tests
 ├── pyproject.toml          # Package metadata and dependencies
 └── uv.lock                 # Locked development dependencies
@@ -63,7 +76,47 @@ heic-converter/
 
 ## 🚀 Getting started
 
-### Requirements
+### Standalone macOS app
+
+The app targets **Apple Silicon arm64, macOS 15+**. Intel and Universal2 builds
+are outside the initial scope. A released app is distributed as a DMG with a
+SHA-256 checksum through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
+For a checkout awaiting release, build the app with the
+[build instructions](docs/macos-build-release.md).
+
+1. Verify the downloaded DMG against its SHA-256 checksum.
+2. Open the DMG and drag **HEIC Converter.app** to **Applications**.
+3. Launch the app and click its menu bar icon to show the drop panel.
+
+The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
+the first launch, use **System Settings → Privacy & Security → Open Anyway**
+after attempting to launch this app. Follow
+[Apple's instructions](https://support.apple.com/102445).
+DMG packaging does not bypass Gatekeeper.
+
+Drop local `.heic` files, review the options, then choose **Convert now** or
+**Add to queue**. Queue items wait until you start conversion. Finder copies
+and direct pastes add files to the queue without opening the panel or converting.
+Closing the panel keeps the app, detection, and any current job running.
+Quit from the panel to stop the app.
+
+The default destination is `~/Downloads/HEIC Converter`, created on the first
+conversion. The defaults are JPEG, quality 90, PNG compression 6, metadata
+`safe`, and conflict policy `rename`. App output is collected in the selected
+folder; the CLI continues to preserve directory layout. Settings and the saved
+destination persist, while the file list and clipboard history are never saved.
+Removing an item allows that input to be added again; completed items otherwise
+remain deduplicated until cleared. Cancel finishes the current file and returns
+unstarted files to the queue. New arrivals and option changes do not change an
+already scheduled job.
+
+Only local case-insensitive `.heic` files are accepted. Folders, symlinks,
+unreadable files, `.heif`, clipboard bitmap images, and Photos file promises are
+excluded with a reason. Clipboard detection uses a 0.75-second poll and skips
+existing clipboard content on startup or re-enable. A denied access status stops
+automatic reading; use file drops or direct paste instead.
+
+### CLI/TUI requirements
 
 - Python 3.11 or later
 - macOS is the primary supported platform
@@ -239,7 +292,11 @@ On macOS 15 or later, HEIC images with an Apple HDR gain map are converted to
 16-bit HDR PNG with an HDR color profile. This preserves the source image's HDR
 brightness and color appearance on compatible displays. Other environments
 save the base SDR image, which may look different from the HEIC on an HDR
-display. JPEG output is SDR.
+display. JPEG output is SDR. App results report whether HDR was applied and the
+reason for SDR fallback. HDR preservation depends on the source gain map and
+available ImageIO APIs; it is not guaranteed for every HEIC. PNG compression
+level applies to the Pillow SDR path; the native HDR encoder controls its own
+compression.
 
 ### File discovery and conflict handling
 
@@ -261,7 +318,7 @@ JPEG or PNG. It does not support:
 - OCR or text extraction
 - Live Photo video processing
 - Extracting auxiliary images, sequences, or video instead of the primary still image
-- Single-file input
+- Single-file input through the CLI (the app accepts explicit file lists)
 
 ### Exit codes
 
