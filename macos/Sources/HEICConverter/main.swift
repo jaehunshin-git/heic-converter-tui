@@ -61,10 +61,23 @@ final class DropPanel: NSPanel {
         }
         // WindowServer가 상태 막대 항목을 배치할 수 있도록 launch 콜백 다음 순서에 표시한다.
         DispatchQueue.main.async { [self] in
-            togglePanel()
+            showInitialPanelWhenReady(until: Date().addingTimeInterval(5))
+        }
+    }
+
+    private func showInitialPanelWhenReady(until deadline: Date) {
+        if anchorGeometry() != nil {
+            if !panel.isVisible { togglePanel() }
             if CommandLine.arguments.contains("--smoke-test") {
-                waitForPanelSmokeReadiness(until: Date().addingTimeInterval(5))
+                waitForPanelSmokeReadiness(until: deadline)
             }
+        } else if Date() < deadline {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+                showInitialPanelWhenReady(until: deadline)
+            }
+        } else {
+            print("메뉴 아이콘 배치 준비 시간 초과")
+            if CommandLine.arguments.contains("--smoke-test") { runPanelSmokeTest() }
         }
     }
 
@@ -108,6 +121,7 @@ final class DropPanel: NSPanel {
     @objc func togglePanel() {
         if panel.isVisible { panel.orderOut(nil) }
         else {
+            guard anchorGeometry() != nil else { return }
             positionPanel()
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
@@ -136,7 +150,11 @@ final class DropPanel: NSPanel {
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         guard anchor.width > 0, anchor.height > 0 else { return nil }
         let center = NSPoint(x: anchor.midX, y: anchor.midY)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? window.screen else { return nil }
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else { return nil }
+        // 생성 직후의 상태 막대 창은 (0, -11) 같은 임시 좌표를 가진다.
+        // 실제 화면 상단 메뉴 막대에 도착하기 전에는 창 크기와 위치를 계산하지 않는다.
+        let menuBarHeight = max(NSStatusBar.system.thickness, anchor.height, screen.safeAreaInsets.top)
+        guard center.y >= screen.frame.maxY - menuBarHeight - 2 else { return nil }
         return (anchor, screen.visibleFrame)
     }
 
