@@ -68,8 +68,11 @@ shasum -a 256 -c HEIC-Converter-0.3.0-arm64.dmg.sha256
 GitHub에서 관리하고 기존 Python sdist 허용 목록은 유지한다.
 
 테스트 사진은 실행 중 합성한다. HDR 테스트는 ImageIO로 SDR 기본 이미지와 Apple
-게인 맵을 생성하고 실제 네이티브 16비트 PNG, PQ 색상 프로파일, 메타데이터 정책과
+게인 맵을 생성하고 실제 네이티브 16비트 PNG, PQ ICC 프로파일 또는 CICP 색상 정보, 메타데이터 정책과
 원본 보존을 확인한다. 일반 HEIC나 JPEG의 SDR 처리는 별도로 검증한다.
+ICC와 CICP 모두 HDR 색상 표현에 유효하며 [Apple 설명](https://developer.apple.com/videos/play/wwdc2023/10181/)과
+[PNG3 규격](https://www.w3.org/TR/png-3/)을 따른다. 실행 OS에 따라 ImageIO의 기록
+형식이 다를 수 있다.
 
 ## 설치와 첫 실행
 
