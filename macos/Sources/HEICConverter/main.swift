@@ -23,6 +23,7 @@ final class DropPanel: NSPanel {
     private var statusItem: NSStatusItem!
     private var panel: DropPanel!
     private var countSubscription: AnyCancellable?
+    private var isPositioningPanel = false
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -32,8 +33,8 @@ final class DropPanel: NSPanel {
             button.target = self; button.action = #selector(togglePanel)
             button.toolTip = "HEIC Converter · 클릭하여 패널 열기 또는 숨기기"
         }
-        panel = DropPanel(contentRect: NSRect(x: 0, y: 0, width: 570, height: 760),
-                          styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
+        panel = DropPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 650),
+                          styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         panel.title = "HEIC Converter"
         panel.onPaste = { [weak self] in self?.model.paste() }
         panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.DropPanel")
@@ -41,35 +42,102 @@ final class DropPanel: NSPanel {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.minSize = NSSize(width: 570, height: 710)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.minSize = NSSize(width: 480, height: 600)
         panel.delegate = self
-        panel.contentView = NSHostingView(rootView: PanelView(model: model))
-        panel.center()
-        countSubscription = model.$queue.sink { [weak self] queue in self?.statusItem.button?.title = " \(queue.waitingCount)" }
+        panel.contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
+            self?.panel.orderOut(nil)
+        }))
+        observeAnchorChanges()
+        countSubscription = model.$queue.sink { [weak self] queue in
+            self?.statusItem.button?.title = " \(queue.waitingCount)"
+            self?.reanchorVisiblePanel()
+        }
         togglePanel()
         if CommandLine.arguments.contains("--smoke-test") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-                var passed = panel.isVisible && !panel.hidesOnDeactivate && panel.level == .floating && modelInputSmokeTest()
+                var passed = panel.isVisible && !panel.hidesOnDeactivate && panel.level == .floating
+                    && panelPlacementSmokeTest() && modelInputSmokeTest()
                 togglePanel(); passed = passed && !panel.isVisible
-                togglePanel(); passed = passed && panel.isVisible
+                togglePanel(); passed = passed && panel.isVisible && panelPlacementSmokeTest()
                 NSApp.deactivate()
                 passed = passed && panel.isVisible
                 _ = windowShouldClose(panel); passed = passed && !panel.isVisible
                 togglePanel(); passed = passed && panel.isVisible
                 model.shutdown()
-                print(passed ? "패널 표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
+                print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
                 exit(passed ? 0 : 1)
             }
         }
     }
     @objc func togglePanel() {
         if panel.isVisible { panel.orderOut(nil) }
-        else { NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil) }
+        else {
+            positionPanel()
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        }
     }
+
+    private func observeAnchorChanges() {
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(reanchorVisiblePanel),
+                           name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        if let button = statusItem.button {
+            button.postsFrameChangedNotifications = true
+            center.addObserver(self, selector: #selector(reanchorVisiblePanel),
+                               name: NSView.frameDidChangeNotification, object: button)
+            if let window = button.window {
+                for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
+                             NSWindow.didChangeScreenNotification] {
+                    center.addObserver(self, selector: #selector(reanchorVisiblePanel), name: name, object: window)
+                }
+            }
+        }
+    }
+
+    private func anchorGeometry() -> (anchor: NSRect, visibleFrame: NSRect)? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        let center = NSPoint(x: anchor.midX, y: anchor.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? window.screen else { return nil }
+        return (anchor, screen.visibleFrame)
+    }
+
+    @objc private func reanchorVisiblePanel() {
+        if panel?.isVisible == true { positionPanel() }
+    }
+
+    private func positionPanel() {
+        guard !isPositioningPanel, let geometry = anchorGeometry() else { return }
+        isPositioningPanel = true
+        defer { isPositioningPanel = false }
+        let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
+        panel.minSize = NSSize(width: min(480, available.width), height: min(600, available.height))
+        panel.maxSize = available.size
+        let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: panel.frame.size)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+    }
+
+    func windowDidResize(_ notification: Notification) { reanchorVisiblePanel() }
+
+    private func panelPlacementSmokeTest() -> Bool {
+        guard let geometry = anchorGeometry() else { return false }
+        let frame = panel.frame
+        let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: frame.size)
+        let passed = geometry.visibleFrame.contains(frame) && frame.maxY <= geometry.anchor.minY
+            && abs(frame.minX - expected.minX) < 1 && abs(frame.maxY - expected.maxY) < 1
+        if passed { print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame)") }
+        return passed
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()
+        NotificationCenter.default.removeObserver(self)
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
     }
 }
