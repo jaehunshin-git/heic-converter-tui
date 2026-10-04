@@ -100,6 +100,7 @@ def smoke(worker: Path) -> None:
                 text=True,
                 env=environment,
                 timeout=60,
+                check=False,
             )
             assert result.returncode == 0, result.stderr
             events = [json.loads(line) for line in result.stdout.splitlines()]
@@ -136,6 +137,7 @@ def smoke(worker: Path) -> None:
             text=True,
             env=environment,
             timeout=60,
+            check=False,
         )
         assert result.returncode == 0, result.stderr
         events = [json.loads(line) for line in result.stdout.splitlines()]
