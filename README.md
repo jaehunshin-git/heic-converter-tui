@@ -26,7 +26,7 @@ see [README.ko.md](README.ko.md).
 
 | Feature | Description |
 | --- | --- |
-| Menu bar app | Keep a floating drop panel open across focus changes; hide it without interrupting conversion or clipboard detection. |
+| Menu bar app | Open a glass drop panel below the menu bar icon; keep it visible across focus changes and hide it without interrupting conversion or clipboard detection. |
 | File queue | Drop one or more HEIC files, choose Convert now or Add to queue, and inspect per-file results. Dropping never starts conversion automatically. |
 | Finder clipboard | Detect copied local file URLs in the background, or paste with the button or Command-V. Detection is optional and remembers your preference. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
@@ -88,6 +88,11 @@ For a checkout awaiting release, build the app with the
 2. Open the DMG and drag **HEIC Converter.app** to **Applications**.
 3. Launch the app and click its menu bar icon to show the drop panel.
 
+The panel opens directly below its menu bar icon and stays within the current
+screen's available area. Its glassmorphism interface uses native macOS blur,
+translucent cards, and subtle borders. Enabling **Reduce transparency** in macOS
+accessibility settings switches to an opaque background for readability.
+
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
 the first launch, use **System Settings → Privacy & Security → Open Anyway**
 after attempting to launch this app. Follow
@@ -101,7 +106,7 @@ Closing the panel keeps the app, detection, and any current job running.
 Quit from the panel to stop the app.
 
 The default destination is `~/Downloads/HEIC Converter`, created on the first
-conversion. The defaults are JPEG, quality 90, PNG compression 6, metadata
+conversion. The defaults are JPEG, High quality (90), PNG compression 6, metadata
 `safe`, and conflict policy `rename`. App output is collected in the selected
 folder; the CLI continues to preserve directory layout. Settings and the saved
 destination persist, while the file list and clipboard history are never saved.
@@ -109,6 +114,13 @@ Removing an item allows that input to be added again; completed items otherwise
 remain deduplicated until cleared. Cancel finishes the current file and returns
 unstarted files to the queue. New arrivals and option changes do not change an
 already scheduled job.
+
+The macOS app offers four JPEG quality presets: **Low (60)**, **Medium (80)**,
+**High (90, default)**, and **Raw (100)**. Raw means maximum JPEG quality;
+JPEG remains lossy, and this option produces neither a RAW file nor lossless
+output. Existing saved numeric quality values remain unchanged until you choose
+a preset; the app displays the nearest preset. PNG keeps its compression slider.
+The TUI and CLI retain their existing quality controls.
 
 Only local case-insensitive `.heic` files are accepted. Folders, symlinks,
 unreadable files, `.heif`, clipboard bitmap images, and Photos file promises are
