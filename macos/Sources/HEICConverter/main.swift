@@ -59,23 +59,52 @@ final class DropPanel: NSPanel {
             self?.statusItem.button?.title = " \(queue.waitingCount)"
             self?.reanchorVisiblePanel()
         }
-        togglePanel()
-        if CommandLine.arguments.contains("--smoke-test") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-                var passed = panel.isVisible && !panel.hidesOnDeactivate && panel.level == .floating
-                    && panelPlacementSmokeTest() && modelInputSmokeTest()
-                togglePanel(); passed = passed && !panel.isVisible
-                togglePanel(); passed = passed && panel.isVisible && panelPlacementSmokeTest()
-                NSApp.deactivate()
-                passed = passed && panel.isVisible
-                _ = windowShouldClose(panel); passed = passed && !panel.isVisible
-                togglePanel(); passed = passed && panel.isVisible
-                model.shutdown()
-                print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
-                exit(passed ? 0 : 1)
+        // WindowServer가 상태 막대 항목을 배치할 수 있도록 launch 콜백 다음 순서에 표시한다.
+        DispatchQueue.main.async { [self] in
+            togglePanel()
+            if CommandLine.arguments.contains("--smoke-test") {
+                waitForPanelSmokeReadiness(until: Date().addingTimeInterval(5))
             }
         }
     }
+
+    private func waitForPanelSmokeReadiness(until deadline: Date) {
+        if panel.isVisible, anchorGeometry() != nil {
+            positionPanel()
+            runPanelSmokeTest()
+        } else if Date() < deadline {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+                waitForPanelSmokeReadiness(until: deadline)
+            }
+        } else {
+            print("패널 준비 시간 초과: 표시=\(panel.isVisible), 아이콘=\(statusItem.button != nil), 아이콘 창=\(statusItem.button?.window != nil), 화면 수=\(NSScreen.screens.count)")
+            runPanelSmokeTest()
+        }
+    }
+
+    private func runPanelSmokeTest() {
+        var passed = true
+        func check(_ label: String, _ condition: Bool) {
+            print("패널 검증 [\(label)]: \(condition ? "성공" : "실패")")
+            if !condition { passed = false }
+        }
+        check("최초 표시", panel.isVisible)
+        check("포커스 상실 시 유지 설정", !panel.hidesOnDeactivate)
+        check("플로팅 레벨", panel.level == .floating)
+        check("최초 배치와 크기", panelPlacementSmokeTest())
+        check("입력 모델", modelInputSmokeTest())
+        togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
+        togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
+        check("다시 표시한 배치와 크기", panelPlacementSmokeTest())
+        NSApp.deactivate()
+        check("비활성화 후 표시 유지", panel.isVisible)
+        _ = windowShouldClose(panel); check("닫기 후 숨김", !panel.isVisible)
+        togglePanel(); check("닫기 후 다시 표시", panel.isVisible)
+        model.shutdown()
+        print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
+        exit(passed ? 0 : 1)
+    }
+
     @objc func togglePanel() {
         if panel.isVisible { panel.orderOut(nil) }
         else {
@@ -105,6 +134,7 @@ final class DropPanel: NSPanel {
     private func anchorGeometry() -> (anchor: NSRect, visibleFrame: NSRect)? {
         guard let button = statusItem.button, let window = button.window else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard anchor.width > 0, anchor.height > 0 else { return nil }
         let center = NSPoint(x: anchor.midX, y: anchor.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? window.screen else { return nil }
         return (anchor, screen.visibleFrame)
@@ -130,7 +160,10 @@ final class DropPanel: NSPanel {
     func windowDidResize(_ notification: Notification) { reanchorVisiblePanel() }
 
     private func panelPlacementSmokeTest() -> Bool {
-        guard let geometry = anchorGeometry() else { return false }
+        guard let geometry = anchorGeometry() else {
+            print("메뉴 아이콘 화면 좌표 확인 실패: 아이콘=\(statusItem.button != nil), 아이콘 창=\(statusItem.button?.window != nil), 화면 수=\(NSScreen.screens.count), 패널=\(panel.frame)")
+            return false
+        }
         let frame = panel.frame
         let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
         let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: frame.size)
