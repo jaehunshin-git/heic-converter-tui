@@ -13,6 +13,28 @@ final class PanelPlacementTests: XCTestCase {
         XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5), 800)
     }
 
+    func testExpandedSettingsPreserveThumbnailSpace() {
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true), 700)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0, settingsExpanded: true), 800)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true), 928)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5, settingsExpanded: true), 980)
+        // 펼침 상태를 되돌리면 기존 간결한 높이 정책으로 돌아간다.
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: false), 748)
+    }
+
+    func testExpandedSettingsFitScreenWithoutMovingTopOrChangingWidth() {
+        let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
+        let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
+        let compact = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
+            size: CGSize(width: 380, height: PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0)))
+        let expanded = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
+            size: CGSize(width: 380, height: PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true)))
+        XCTAssertEqual(expanded.maxY, compact.maxY)
+        XCTAssertEqual(expanded.width, compact.width)
+        XCTAssertGreaterThan(expanded.height, compact.height)
+        XCTAssertTrue(visible.contains(expanded))
+    }
+
     func testFileExpansionKeepsTopAndWidthAndFitsSmallScreen() {
         let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)

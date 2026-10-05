@@ -6,6 +6,7 @@ import ConverterKit
 struct PanelView: View {
     @ObservedObject var model: AppModel
     var onClose: () -> Void
+    var onSettingsExpansionChanged: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
@@ -67,6 +68,7 @@ struct PanelView: View {
         }
         .controlSize(.regular)
         .buttonStyle(PanelActionButtonStyle())
+        .onChange(of: presentation.settingsExpanded) { _, expanded in onSettingsExpansionChanged(expanded) }
         .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
         .onChange(of: model.queue.items.map(\.id)) { old, new in
             let previous = Set(old)
