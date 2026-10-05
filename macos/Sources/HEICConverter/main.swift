@@ -418,6 +418,22 @@ final class DropPanel: NSPanel {
     guard hasDuplicate(first), hasFormatError(), model.queue.items.count == 1 else { return false }
     model.remove(path)
     guard !hasDuplicate(first), hasFormatError() else { return false }
+    do {
+        let folder = first.deletingLastPathComponent()
+        let source = folder.appendingPathComponent("교체 전 파일.heic")
+        let target = folder.appendingPathComponent("링크 대상 파일.heic")
+        try Data([5]).write(to: source); try Data([6]).write(to: target)
+        let sourceID = InputValidator.canonicalPath(source)
+        let targetID = InputValidator.canonicalPath(target)
+        model.stage([source, target]); model.acceptStaged(convert: false)
+        model.stage([source, unsupported])
+        guard hasDuplicate(source), hasFormatError() else { return false }
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: target)
+        model.remove(sourceID)
+        guard model.queue.knownPaths == [targetID], !hasDuplicate(source), hasFormatError() else { return false }
+        model.remove(targetID)
+    } catch { return false }
     print("중복 안내 목록 제거·선택 취소·완료 정리·잠금·다른 입력 오류 보존 확인 완료")
     return true
 }
