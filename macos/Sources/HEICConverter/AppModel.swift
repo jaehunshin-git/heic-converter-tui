@@ -16,6 +16,8 @@ import ConverterKit
     private let pasteboard: NSPasteboard
     private let settingsStore: UserDefaults
     private var gate: ClipboardGate
+    /// 자동 감지로 새 파일을 추가했을 때만 패널 표시를 요청한다.
+    var onClipboardFilesAdded: (() -> Void)?
     var waitingCount: Int { queue.waitingCount }
     var active: Bool { queue.activeJob != nil }
 
@@ -57,7 +59,10 @@ import ConverterKit
         }
         let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
         queue.add(result.accepted); notices = result.rejected
-        if !result.accepted.isEmpty { message = "\(result.accepted.count)개 파일을 대기 목록에 추가했습니다." }
+        if !result.accepted.isEmpty {
+            message = "\(result.accepted.count)개 파일을 대기 목록에 추가했습니다."
+            if !manual { onClipboardFilesAdded?() }
+        }
     }
     func stage(_ urls: [URL]) {
         let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
