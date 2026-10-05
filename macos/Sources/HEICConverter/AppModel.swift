@@ -80,6 +80,9 @@ import ConverterKit
         let itemID = queue.knownPaths.contains(path) ? path : InputValidator.canonicalPath(URL(fileURLWithPath: path))
         queue.remove(itemID)
     }
+    // 선택 상태가 가진 고정 ID를 그대로 사용한다. 파일 경로를 다시 해석하지 않는다.
+    func removeSelected(_ ids: Set<String>) { queue.removeSelected(ids) }
+    func removeAll() { queue.removeAll() }
     func clearCompleted() { queue.clearCompleted() }
     func cancelStaged() { staged.removeAll() }
 

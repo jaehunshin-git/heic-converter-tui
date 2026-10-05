@@ -178,7 +178,12 @@ public struct QueueState {
         jobs.removeAll()
         for index in items.indices where items[index].status == .scheduled { items[index].status = .waiting }
     }
-    public mutating func remove(_ path: String) { items.removeAll { $0.id == path && !$0.status.locked } }
+    public mutating func remove(_ path: String) { removeSelected([path]) }
+    /// 목록 항목만 제거한다. 실행 중이거나 예약된 항목과 작업 스냅샷은 보존한다.
+    public mutating func removeSelected(_ ids: Set<String>) {
+        items.removeAll { ids.contains($0.id) && !$0.status.locked }
+    }
+    public mutating func removeAll() { items.removeAll { !$0.status.locked } }
     public mutating func clearCompleted() { items.removeAll { $0.status.finished } }
 }
 
