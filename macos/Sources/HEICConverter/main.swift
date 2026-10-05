@@ -315,7 +315,13 @@ final class DropPanel: NSPanel {
             panel.setContentSize(NSSize(width: originalWidth, height: originalHeight))
             positionPanel()
         }
-        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.08)) }
+        func settle(_ duration: TimeInterval = 0.08) {
+            let deadline = Date().addingTimeInterval(duration)
+            // CI에서는 run(until:)가 다른 이벤트 때문에 일찍 반환할 수 있다.
+            while Date() < deadline {
+                RunLoop.main.run(until: min(deadline, Date().addingTimeInterval(0.01)))
+            }
+        }
         func expectedHeight() -> CGFloat {
             guard let geometry = anchorGeometry() else { return 0 }
             return min(PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame).height,
@@ -356,7 +362,7 @@ final class DropPanel: NSPanel {
         model.queue.add(Array(urls.dropFirst()))
         showPanelForClipboard(animated: true)
         model.queue.add([URL(fileURLWithPath: "/tmp/heic-panel-size-5.heic")])
-        settle(); RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        settle(0.35)
         return panel.frame.height == expectedHeight() && panelPlacementSmokeTest()
     }
 
