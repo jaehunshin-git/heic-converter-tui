@@ -9,8 +9,19 @@ struct PanelView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var closeFocused: Bool
     @StateObject private var presentation = PanelPresentationState()
+    private var dropHighlighted: Bool { model.dropTargeted || presentation.dropHovered }
+    private var dropTitle: String {
+        if model.dropTargeted { return "여기에 놓아서 파일 선택" }
+        switch presentation.dropFeedback {
+        case .idle: return "HEIC 파일을 여기에 놓으세요"
+        case .loading: return "파일을 확인하고 있습니다"
+        case .accepted: return "HEIC 파일을 선택했습니다"
+        case .rejected: return "추가할 수 없는 파일입니다"
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,16 +89,31 @@ struct PanelView: View {
 
     private var dropZone: some View {
         VStack(spacing: 6) {
-            Image(systemName: "arrow.down.doc").font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
-            Text("HEIC 파일을 여기에 놓으세요").font(.headline)
-            HStack(spacing: 8) {
-                Text("Finder 파일을 놓거나 붙여넣으세요.").font(.caption).foregroundStyle(.secondary)
-                Button("붙여넣기", action: model.paste).keyboardShortcut("v", modifiers: .command)
+            if presentation.dropFeedback == .loading {
+                ProgressView().controlSize(.small).frame(height: 22)
+            } else {
+                Image(systemName: model.dropTargeted ? "arrow.down.circle.fill"
+                      : presentation.dropFeedback == .accepted ? "checkmark.circle"
+                      : presentation.dropFeedback == .rejected ? "exclamationmark.circle" : "arrow.down.doc")
+                    .font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
             }
+            Text(dropTitle).font(.headline)
+            Text("드래그 앤 드롭 · Finder에서 파일을 끌어놓으세요")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("붙여넣기", action: model.paste).font(.caption.weight(.medium))
+                .buttonStyle(PanelActionButtonStyle(compact: true)).keyboardShortcut("v", modifiers: .command)
         }
         .frame(maxWidth: .infinity).padding(12)
-        .background(Color.accentColor.opacity(model.dropTargeted ? 0.18 : 0.06), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(model.dropTargeted ? 0.8 : 0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        .background(Color.accentColor.opacity(model.dropTargeted ? 0.2 : presentation.dropHovered ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(dropHighlighted ? 0.85 : 0.35),
+                    style: StrokeStyle(lineWidth: model.dropTargeted ? 2 : presentation.dropHovered ? 1.5 : 1, dash: model.dropTargeted ? [] : [5, 4])))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onHover { presentation.dropHovered = $0 }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: dropHighlighted)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: model.dropTargeted)
+        .onChange(of: model.staged.isEmpty) { _, empty in
+            if empty && presentation.dropFeedback == .accepted { presentation.dropFeedback = .idle }
+        }
         .help("Photos 직접 드롭은 아직 지원하지 않습니다. Photos에서 수정되지 않은 HEIC 원본을 내보낸 뒤 Finder에서 드롭하세요.")
         .onDrop(of: [UTType.fileURL.identifier] + NSFilePromiseReceiver.readableDraggedTypes,
                 isTargeted: $model.dropTargeted, perform: drop)
@@ -107,7 +133,7 @@ struct PanelView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 120)
             HStack {
-                Button("취소") { model.staged.removeAll() }
+                Button("취소", action: model.cancelStaged)
                 Spacer()
                 Button("대기 목록에 추가") { model.acceptStaged(convert: false) }
                 Button("지금 변환") { model.acceptStaged(convert: true) }.buttonStyle(PanelActionButtonStyle(tone: .accent))
@@ -117,7 +143,6 @@ struct PanelView: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
             Button { presentation.settingsExpanded.toggle() } label: {
                 HStack {
                     Label("변환 설정", systemImage: "slider.horizontal.3").font(.subheadline.weight(.semibold))
@@ -130,22 +155,19 @@ struct PanelView: View {
             .accessibilityLabel("변환 설정")
             .accessibilityValue(presentation.settingsExpanded ? "펼침" : "접힘")
             .help("형식·품질·저장 위치를 요약합니다. 펼치면 메타데이터와 동일 이름 정책도 변경할 수 있습니다.")
-            if !presentation.settingsExpanded {
-                Picker("형식", selection: $model.settings.options.outputFormat) {
-                    Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 112)
-            }
-            }
             if presentation.settingsExpanded {
                 expandedSettings
             } else {
-                HStack(spacing: 6) {
+                Picker("형식", selection: $model.settings.options.outputFormat) {
+                    Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 112)
+                HStack(spacing: 8) {
                     Text(model.settings.options.outputFormat == "jpeg"
                          ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
                          : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
                         .font(.caption).fixedSize()
-                    Divider().frame(height: 12)
-                    outputLocation(editable: false).frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 0)
+                    outputLocation(editable: false).frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }.glassCard()
@@ -193,28 +215,30 @@ struct PanelView: View {
 
     private func outputLocation(editable: Bool) -> some View {
         HStack(spacing: 6) {
+            Spacer(minLength: 0)
             Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
             Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
-                .lineLimit(1).truncationMode(.middle).help(model.settings.outputDirectory)
+                .lineLimit(1).truncationMode(.head).help(model.settings.outputDirectory)
             if editable {
-                Spacer(minLength: 0)
                 Button("변경", action: model.chooseOutput).accessibilityLabel("저장 위치 변경")
             }
         }
     }
 
     private var fileList: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("파일 목록").font(.headline)
+                Label("파일 목록", systemImage: "photo.stack").font(.subheadline.weight(.semibold))
                 Text("대기 \(model.waitingCount)개").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("재시도", action: model.retryFailures).accessibilityLabel("실패 재시도").disabled(!model.queue.items.contains { $0.status == .failed })
-                Button("정리") { model.queue.clearCompleted() }.accessibilityLabel("완료 정리").disabled(!model.queue.items.contains { $0.status.finished })
+                Button("재시도", action: model.retryFailures).font(.caption).buttonStyle(PanelActionButtonStyle(compact: true))
+                    .accessibilityLabel("실패 재시도").disabled(!model.queue.items.contains { $0.status == .failed })
+                Button("정리", action: model.clearCompleted).font(.caption).buttonStyle(PanelActionButtonStyle(compact: true))
+                    .accessibilityLabel("완료 정리").disabled(!model.queue.items.contains { $0.status.finished })
             }
             if model.queue.items.isEmpty {
                 Label("대기 중인 파일이 없습니다.", systemImage: "tray")
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 2)
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(model.queue.items) { item in
@@ -228,7 +252,7 @@ struct PanelView: View {
                             Spacer(minLength: 0)
                             if let destination = item.destination { Button("결과") { model.reveal(destination) } }
                             if item.status == .failed { Button("재시도") { model.retry(item.id) } }
-                            Button { model.queue.remove(item.id) } label: { Image(systemName: "xmark").frame(width: 22, height: 22) }
+                            Button { model.remove(item.id) } label: { Image(systemName: "xmark").frame(width: 22, height: 22) }
                                 .buttonStyle(.borderless).disabled(item.status.locked).accessibilityLabel("\(item.url.lastPathComponent) 제거").help("항목 제거")
                         }.padding(.vertical, 9)
                         Divider()
@@ -296,9 +320,11 @@ struct PanelView: View {
     private func drop(_ providers: [NSItemProvider]) -> Bool {
         let supported = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
         guard !supported.isEmpty else {
+            presentation.dropFeedback = .rejected
             model.message = "Photos 직접 드롭은 아직 지원하지 않습니다. HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
             return false
         }
+        presentation.dropFeedback = .loading
         Task { @MainActor in
             var urls: [URL] = []
             for provider in supported {
@@ -312,9 +338,12 @@ struct PanelView: View {
                 if let url { urls.append(url) }
             }
             if urls.isEmpty {
+                presentation.dropFeedback = .rejected
                 model.message = "파일 URL을 읽지 못했습니다. Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
             } else {
+                let previousCount = model.staged.count
                 model.stage(urls)
+                presentation.dropFeedback = model.staged.count > previousCount ? .accepted : .rejected
             }
         }
         return true
@@ -354,14 +383,35 @@ private extension View {
 }
 
 @MainActor private final class PanelPresentationState: ObservableObject {
+    enum DropFeedback { case idle, loading, accepted, rejected }
     @Published var settingsExpanded = false
+    @Published var dropHovered = false
+    @Published var dropFeedback: DropFeedback = .idle
+}
+
+@MainActor private final class PanelButtonInteractionState: ObservableObject {
+    @Published var hovered = false
 }
 
 /// 창 활성 여부와 무관하게 상태 색과 공통 모서리를 유지한다.
 private struct PanelActionButtonStyle: ButtonStyle {
     enum Tone { case neutral, accent, detection, destructive }
     var tone: Tone = .neutral
+    var compact = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        PanelActionButtonBody(configuration: configuration, tone: tone, compact: compact)
+    }
+}
+
+private struct PanelActionButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let tone: PanelActionButtonStyle.Tone
+    let compact: Bool
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var interaction = PanelButtonInteractionState()
+    private var hovered: Bool { interaction.hovered }
 
     private var tint: Color {
         switch tone {
@@ -372,24 +422,41 @@ private struct PanelActionButtonStyle: ButtonStyle {
         }
     }
     private var filled: Bool { tone == .accent || tone == .destructive }
-    private var filledForeground: Color {
-        guard tone == .accent, let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return .white }
+    private var usesDarkFilledForeground: Bool {
+        guard tone == .accent, let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return false }
         func linear(_ value: CGFloat) -> CGFloat {
             value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
         let luminance = 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent)
             + 0.0722 * linear(color.blueComponent)
-        return luminance > 0.179 ? .black : .white
+        return luminance > 0.179
     }
-    func makeBody(configuration: Configuration) -> some View {
+    private var filledForeground: Color { usesDarkFilledForeground ? .black : .white }
+    var body: some View {
         configuration.label
             .foregroundStyle(enabled ? (filled ? filledForeground : tint) : Color.secondary)
-            .padding(.horizontal, 10).padding(.vertical, 9)
-            .background((enabled && filled ? tint : tint.opacity(enabled ? 0.1 : 0.06))
-                .opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, compact ? 8 : 10).padding(.vertical, compact ? 5 : 9)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(enabled && filled ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : 0.06))
+                    .overlay {
+                        if enabled && filled {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill((usesDarkFilledForeground ? Color.white : Color.black)
+                                    .opacity(configuration.isPressed ? 0.2 : hovered ? 0.12 : 0))
+                        } else if enabled && configuration.isPressed {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.12))
+                        }
+                    }.allowsHitTesting(false)
+            }
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(tint.opacity(enabled ? 0.2 : 0.08), lineWidth: 1))
+                .strokeBorder(tint.opacity(enabled ? (hovered ? 0.45 : 0.2) : 0.08), lineWidth: 1).allowsHitTesting(false))
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .shadow(color: enabled && hovered ? tint.opacity(0.18) : .clear, radius: 3, y: 1)
+            .scaleEffect(enabled && configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .onHover { interaction.hovered = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovered)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
