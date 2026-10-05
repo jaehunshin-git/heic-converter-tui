@@ -418,6 +418,11 @@ final class DropPanel: NSPanel {
     guard hasDuplicate(first), hasFormatError(), model.queue.items.count == 1 else { return false }
     model.remove(path)
     guard !hasDuplicate(first), hasFormatError() else { return false }
+    // 느린 이전 드롭은 파일을 추가하되 최신 드롭의 오류 안내를 덮지 않는다.
+    model.stage([unsupported])
+    model.stage([second], updateNotices: false)
+    guard model.staged.count == 1, hasFormatError() else { return false }
+    model.cancelStaged()
     do {
         let folder = first.deletingLastPathComponent()
         let source = folder.appendingPathComponent("교체 전 파일.heic")
