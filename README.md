@@ -90,10 +90,12 @@ For a checkout awaiting release, build the app with the
 
 The panel opens directly below its menu bar icon and stays within the current
 screen's available area. The compact panel defaults to 420 × 560 points, with a
-380 × 560 minimum. Settings start collapsed, with a small JPEG/PNG selector
-on the left below the header. Quality or PNG compression and the right-aligned
-destination share one line; long paths shorten from the beginning to show the end.
-Expand them to change metadata and conflict policies, arranged side by side.
+380 × 560 minimum. Settings start collapsed, with the small JPEG/PNG selector,
+quality or PNG compression, and right-aligned destination on one line below the
+header. Long paths shorten from the beginning to show the end. Expanded settings
+use smaller selector text and a compact destination Change button. Metadata and
+conflict policies sit side by side with centered labels and menus sized to their
+content.
 Hover over the JPEG quality selector for the encoder explanation. Your latest
 conversion settings and destination are restored after restarting the app. Native blur and translucent cards use a stronger background for
 readability. **Reduce transparency** and increased contrast prioritize readability.
@@ -101,8 +103,8 @@ Buttons share rounded corners; one clipboard button states “클립보드 감�
 or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. The neutral close button retains keyboard focus
 feedback; conversion and secondary actions occupy separate rows. Main buttons
 respond to hovering and pressing, respecting Reduce motion; disabled buttons stay
-static. The file list has an icon, compact Retry and Clear buttons, and a smaller
-empty state.
+static. The conversion button uses slightly larger text and an icon. The file list
+has an icon, compact Retry and Clear buttons, and a smaller empty state.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
 the first launch, use **System Settings → Privacy & Security → Open Anyway**
@@ -130,6 +132,11 @@ destination persist, while the file list and clipboard history are never saved.
 Existing user-selected destinations are preserved; only the known QA setting
 `/private/tmp/heic-converter-ui-check/converted` resets to the new default, without
 moving or deleting files. Home paths appear with `~` in the app.
+Click file rows to select multiple items; checkmarks and highlighting show the
+selection. Use Select all or Deselect, then Remove selected, or use Remove all to
+clear every removable item. Individual × buttons remain available. Scheduled and
+converting items cannot be selected or removed by any of these actions. Removal
+only changes the list: source and converted files remain on disk.
 Removing an item allows that input to be added again; completed items otherwise
 remain deduplicated until cleared. Duplicate notices clear when their related
 files leave the lists; other input errors remain. Cancel finishes the current file and returns
