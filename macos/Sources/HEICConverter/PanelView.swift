@@ -65,6 +65,7 @@ struct PanelView: View {
         }
         .controlSize(.regular)
         .buttonStyle(PanelActionButtonStyle())
+        .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
     }
 
     private var header: some View {
@@ -158,37 +159,33 @@ struct PanelView: View {
             if presentation.settingsExpanded {
                 expandedSettings
             } else {
-                Picker("형식", selection: $model.settings.options.outputFormat) {
-                    Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 112)
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    formatSegments.frame(width: 88, height: 22)
                     Text(model.settings.options.outputFormat == "jpeg"
                          ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
                          : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
-                        .font(.caption).fixedSize()
-                    Spacer(minLength: 0)
+                        .font(.system(size: 10)).fixedSize()
                     outputLocation(editable: false).frame(maxWidth: .infinity, alignment: .trailing)
                 }
+
             }
         }.glassCard()
     }
 
     private var expandedSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("형식", selection: $model.settings.options.outputFormat) {
-                Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
-            }.pickerStyle(.segmented)
+            formatSegments.fixedSize().frame(maxWidth: .infinity)
             if model.settings.options.outputFormat == "jpeg" {
-                Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
-                    ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
-                }.pickerStyle(.segmented)
+                CompactSegments(title: "JPEG 품질", selection: $model.settings.options.qualityPreset,
+                                choices: QualityPreset.allCases.map { SegmentChoice(value: $0, title: $0.label) })
+                    .fixedSize().frame(maxWidth: .infinity)
                     .help("Low 60 · Medium 80 · High 90 · Raw 100. 인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
                 Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
                     .font(.caption).foregroundStyle(.primary)
             } else {
-                Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
-                    ForEach(PNGCompressionPreset.displayOrder) { preset in Text(preset.label).tag(preset) }
-                }.pickerStyle(.segmented)
+                CompactSegments(title: "PNG 압축", selection: $model.settings.options.pngCompressionPreset,
+                                choices: PNGCompressionPreset.displayOrder.map { SegmentChoice(value: $0, title: $0.label) })
+                    .fixedSize().frame(maxWidth: .infinity)
                 Text("압축 \(model.settings.options.pngCompression) · 화질은 같고 저장 시간과 크기가 달라집니다.")
                     .font(.caption).foregroundStyle(.primary)
                 Text("네이티브 HDR PNG에는 이 압축 설정이 적용되지 않습니다.")
@@ -196,21 +193,42 @@ struct PanelView: View {
             }
             Divider()
             HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("메타데이터").font(.caption).foregroundStyle(.secondary)
-                    Picker("메타데이터", selection: $model.settings.options.metadata) {
-                        Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
-                    }.labelsHidden()
-                }.frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("동일 이름").font(.caption).foregroundStyle(.secondary)
-                    Picker("동일 이름", selection: $model.settings.options.onConflict) {
-                        Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
-                    }.labelsHidden()
-                }.frame(maxWidth: .infinity)
+                policyMenu(title: "메타데이터", selection: $model.settings.options.metadata,
+                           choices: [("safe", "안전 보존"), ("preserve", "모두 보존"), ("strip", "제거")])
+                policyMenu(title: "동일 이름", selection: $model.settings.options.onConflict,
+                           choices: [("rename", "새 이름"), ("skip", "건너뛰기"), ("overwrite", "덮어쓰기"), ("error", "오류")])
             }
             outputLocation(editable: true)
         }
+    }
+
+    private var formatSegments: some View {
+        CompactSegments(title: "형식", selection: $model.settings.options.outputFormat,
+                        choices: [SegmentChoice(value: "jpeg", title: "JPEG"), SegmentChoice(value: "png", title: "PNG")])
+    }
+
+    private func policyMenu(title: String, selection: Binding<String>, choices: [(String, String)]) -> some View {
+        VStack(spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Menu {
+                ForEach(choices, id: \.0) { value, label in
+                    Button { selection.wrappedValue = value } label: {
+                        if selection.wrappedValue == value { Label(label, systemImage: "checkmark") }
+                        else { Text(label) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(choices.first { $0.0 == selection.wrappedValue }?.1 ?? selection.wrappedValue)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                }
+                .font(.caption).padding(.horizontal, 8).padding(.vertical, 5)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel(title)
+            .accessibilityValue(choices.first { $0.0 == selection.wrappedValue }?.1 ?? selection.wrappedValue)
+        }.frame(maxWidth: .infinity)
     }
 
     private func outputLocation(editable: Bool) -> some View {
@@ -220,7 +238,8 @@ struct PanelView: View {
             Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
                 .lineLimit(1).truncationMode(.head).help(model.settings.outputDirectory)
             if editable {
-                Button("변경", action: model.chooseOutput).accessibilityLabel("저장 위치 변경")
+                Button("변경", action: model.chooseOutput).font(.caption)
+                    .buttonStyle(PanelActionButtonStyle(compact: true)).accessibilityLabel("저장 위치 변경")
             }
         }
     }
@@ -240,26 +259,59 @@ struct PanelView: View {
                 Label("대기 중인 파일이 없습니다.", systemImage: "tray")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 2)
             } else {
+                HStack(spacing: 6) {
+                    Button(allRemovableSelected ? "선택 해제" : "전체 선택") {
+                        presentation.selectedPaths = allRemovableSelected ? [] : removablePaths
+                    }.font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(removablePaths.isEmpty)
+                    Text("선택 \(presentation.selectedPaths.count)개").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("선택 삭제") { model.removeSelected(presentation.selectedPaths); presentation.selectedPaths.removeAll() }
+                        .font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(presentation.selectedPaths.isEmpty)
+                    Button("전체 삭제") { model.removeAll(); presentation.selectedPaths.removeAll() }
+                        .font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(removablePaths.isEmpty)
+                }
+                Text("목록에서만 제거됩니다. 예약·변환 중인 항목은 유지됩니다.")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                 LazyVStack(spacing: 0) {
                     ForEach(model.queue.items) { item in
                         HStack(alignment: .top, spacing: 8) {
-                            FileThumbnailView(url: item.url)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.url.lastPathComponent).font(.callout).lineLimit(1).help(item.id)
-                                Text(item.status.label).font(.caption).foregroundStyle(color(item.status))
-                                if let detail = item.detail { Text(detail).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled) }
+                            Button {
+                                if presentation.selectedPaths.contains(item.id) { presentation.selectedPaths.remove(item.id) }
+                                else { presentation.selectedPaths.insert(item.id) }
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: item.status.locked ? "lock" : presentation.selectedPaths.contains(item.id) ? "checkmark.square.fill" : "square")
+                                        .font(.caption).foregroundStyle(presentation.selectedPaths.contains(item.id) ? Color.accentColor : .secondary)
+                                        .frame(width: 14, height: 32).accessibilityHidden(true)
+                                    FileThumbnailView(url: item.url)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(item.url.lastPathComponent).font(.callout).lineLimit(1).help(item.id)
+                                        Text(item.status.label).font(.caption).foregroundStyle(color(item.status))
+                                        if let detail = item.detail { Text(detail).font(.caption2).foregroundStyle(.secondary) }
+                                    }
+                                    Spacer(minLength: 0)
+                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                             }
-                            Spacer(minLength: 0)
+                            .buttonStyle(.plain).disabled(item.status.locked)
+                            .accessibilityLabel("\(item.url.lastPathComponent) 선택")
+                            .accessibilityValue(presentation.selectedPaths.contains(item.id) ? "선택됨" : "선택 안 됨")
                             if let destination = item.destination { Button("결과") { model.reveal(destination) } }
                             if item.status == .failed { Button("재시도") { model.retry(item.id) } }
                             Button { model.remove(item.id) } label: { Image(systemName: "xmark").frame(width: 22, height: 22) }
                                 .buttonStyle(.borderless).disabled(item.status.locked).accessibilityLabel("\(item.url.lastPathComponent) 제거").help("항목 제거")
-                        }.padding(.vertical, 9)
+                        }.padding(.vertical, 9).padding(.horizontal, 4)
+                            .background(presentation.selectedPaths.contains(item.id) ? Color.accentColor.opacity(0.14) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 8))
                         Divider()
                     }
                 }
             }
         }.glassCard()
+    }
+
+    private var removablePaths: Set<String> { Set(model.queue.items.filter { !$0.status.locked }.map(\.id)) }
+    private var allRemovableSelected: Bool {
+        !removablePaths.isEmpty && presentation.selectedPaths == removablePaths
     }
 
     private var footer: some View {
@@ -274,7 +326,7 @@ struct PanelView: View {
             }
             Button(action: model.startWaiting) {
                 Label(model.active ? "대기 파일 변환 예약" : "대기 목록 변환 시작", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 22)
+                    .font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 24)
             }
             .buttonStyle(PanelActionButtonStyle(tone: .accent))
             .disabled(!model.queue.items.contains { $0.status == .waiting })
@@ -359,6 +411,46 @@ struct PanelView: View {
     }
 }
 
+private struct SegmentChoice<Value: Hashable> {
+    let value: Value
+    let title: String
+}
+
+/// 네이티브 선택·키보드 동작을 유지하면서 작은 글꼴을 명시한다.
+private struct CompactSegments<Value: Hashable>: NSViewRepresentable {
+    let title: String
+    @Binding var selection: Value
+    let choices: [SegmentChoice<Value>]
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.segmentStyle = .rounded
+        control.trackingMode = .selectOne
+        control.controlSize = .small
+        control.font = .systemFont(ofSize: 11, weight: .medium)
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.select(_:))
+        return control
+    }
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        control.segmentCount = choices.count
+        for (index, choice) in choices.enumerated() { control.setLabel(choice.title, forSegment: index) }
+        control.selectedSegment = choices.firstIndex { $0.value == selection } ?? -1
+        control.setAccessibilityLabel(title)
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    final class Coordinator: NSObject {
+        var parent: CompactSegments
+        init(parent: CompactSegments) { self.parent = parent }
+        @objc func select(_ sender: NSSegmentedControl) {
+            guard parent.choices.indices.contains(sender.selectedSegment) else { return }
+            parent.selection = parent.choices[sender.selectedSegment].value
+        }
+    }
+}
+
 /// 창 뒤의 화면을 흐리게 하는 macOS 기본 유리 소재를 사용한다.
 private struct PanelGlass: NSViewRepresentable {
     var opacity: CGFloat
@@ -391,6 +483,7 @@ private extension View {
 @MainActor private final class PanelPresentationState: ObservableObject {
     enum DropFeedback { case idle, loading, accepted, rejected }
     @Published var settingsExpanded = false
+    @Published var selectedPaths: Set<String> = []
     @Published var dropHovered = false
     @Published var dropFeedback: DropFeedback = .idle
     var latestDropID = UUID()
