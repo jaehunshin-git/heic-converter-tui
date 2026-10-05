@@ -302,6 +302,8 @@ final class DropPanel: NSPanel {
         let unsupported = folder.appendingPathComponent("지원 안 함.jpg")
         try Data([1]).write(to: first); try Data([2]).write(to: second)
         try Data([3]).write(to: third); try Data([4]).write(to: unsupported)
+        guard duplicateNoticeSmokeTest(first: first, second: second, unsupported: unsupported,
+                                       clipboard: clipboard, defaults: defaults) else { return false }
         clipboard.writeObjects([first as NSURL])
         let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
         var automaticPresentationCount = 0
@@ -370,6 +372,54 @@ final class DropPanel: NSPanel {
         print("드롭·붙여넣기·중복·거절·감지 재개·자동 표시 이벤트·설정 기억 확인 완료")
         return true
     } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
+}
+
+/// 목록에서 사라진 파일의 중복 안내만 정리하고 다른 입력 오류는 유지한다.
+@MainActor private func duplicateNoticeSmokeTest(first: URL, second: URL, unsupported: URL,
+                                                clipboard: NSPasteboard, defaults: UserDefaults) -> Bool {
+    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+    defer { model.shutdown() }
+    let duplicateReason = "이미 목록에 있는 파일입니다."
+    let formatReason = "확장자가 .heic인 파일만 지원합니다."
+    func hasDuplicate(_ file: URL) -> Bool {
+        model.notices.contains { $0.path == file.path && $0.reason == duplicateReason }
+    }
+    func hasFormatError() -> Bool {
+        model.notices.contains { $0.path == unsupported.path && $0.reason == formatReason }
+    }
+    model.stage([first]); model.acceptStaged(convert: false)
+    model.stage([first, unsupported])
+    guard hasDuplicate(first), hasFormatError() else { return false }
+    // 상위 폴더의 심볼릭 링크를 포함하는 원래 경로도 canonical 목록에서 제거한다.
+    model.remove(first.path)
+    guard model.queue.items.isEmpty, !hasDuplicate(first), hasFormatError() else { return false }
+
+    model.stage([second])
+    model.stage([second, unsupported])
+    guard hasDuplicate(second), hasFormatError() else { return false }
+    model.cancelStaged()
+    guard model.staged.isEmpty, !hasDuplicate(second), hasFormatError() else { return false }
+
+    model.stage([first]); model.acceptStaged(convert: false)
+    model.stage([first, unsupported])
+    let path = InputValidator.canonicalPath(first)
+    model.queue.schedule(paths: [path], settings: model.settings)
+    model.remove(path)
+    guard model.queue.items.count == 1, model.queue.items[0].status.locked,
+          hasDuplicate(first), hasFormatError() else { return false }
+    model.queue.update(path: path, status: .succeeded)
+    model.clearCompleted()
+    guard model.queue.items.isEmpty, !hasDuplicate(first), hasFormatError() else { return false }
+
+    // 선택 파일의 안내는 같은 파일이 대기 목록에 남아 있으면 여전히 유효하다.
+    model.stage([first]); model.acceptStaged(convert: false)
+    model.stage([first, second, unsupported])
+    model.cancelStaged()
+    guard hasDuplicate(first), hasFormatError(), model.queue.items.count == 1 else { return false }
+    model.remove(path)
+    guard !hasDuplicate(first), hasFormatError() else { return false }
+    print("중복 안내 목록 제거·선택 취소·완료 정리·잠금·다른 입력 오류 보존 확인 완료")
+    return true
 }
 
 /// 합성 HEIC만 사용하여 설치된 번들의 worker와 프로토콜을 실제 변환까지 확인한다.
