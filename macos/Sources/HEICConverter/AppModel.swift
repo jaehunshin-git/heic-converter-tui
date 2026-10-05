@@ -16,6 +16,7 @@ import ConverterKit
     private let pasteboard: NSPasteboard
     private let settingsStore: UserDefaults
     private var gate: ClipboardGate
+    private var duplicateNoticePaths: [String: String] = [:]
     /// 자동 감지로 새 파일을 추가했을 때만 패널 표시를 요청한다.
     var onClipboardFilesAdded: (() -> Void)?
     var waitingCount: Int { queue.waitingCount }
@@ -58,7 +59,7 @@ import ConverterKit
             return
         }
         let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
-        queue.add(result.accepted); notices = result.rejected
+        queue.add(result.accepted); setNotices(result.rejected)
         if !result.accepted.isEmpty {
             message = "\(result.accepted.count)개 파일을 대기 목록에 추가했습니다."
             if !manual { onClipboardFilesAdded?() }
@@ -66,7 +67,7 @@ import ConverterKit
     }
     func stage(_ urls: [URL]) {
         let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
-        staged.append(contentsOf: result.accepted); notices = result.rejected
+        staged.append(contentsOf: result.accepted); setNotices(result.rejected)
     }
     func acceptStaged(convert: Bool) {
         let paths = staged.map(\.path)
@@ -74,19 +75,31 @@ import ConverterKit
         if convert { schedule(paths) }
     }
     func remove(_ path: String) {
-        queue.remove(InputValidator.canonicalPath(URL(fileURLWithPath: path)))
+        // 표시 중인 항목의 ID는 파일 경로가 나중에 교체되어도 바뀌지 않는다.
+        let itemID = queue.knownPaths.contains(path) ? path : InputValidator.canonicalPath(URL(fileURLWithPath: path))
+        queue.remove(itemID)
     }
     func clearCompleted() { queue.clearCompleted() }
     func cancelStaged() { staged.removeAll() }
 
     /// 중복 안내는 목록 상태에 종속된다. 지원 형식·권한 등 다른 입력 오류는 보존한다.
     private func pruneDuplicateNotices() {
-        let listedPaths = Set((queue.items.map(\.url) + staged).map(InputValidator.canonicalPath))
+        let listedPaths = queue.knownPaths.union(staged.map(\.path))
         let remaining = notices.filter { rejection in
             rejection.reason != "이미 목록에 있는 파일입니다."
-                || listedPaths.contains(InputValidator.canonicalPath(URL(fileURLWithPath: rejection.path)))
+                || listedPaths.contains(duplicateNoticePaths[rejection.path] ?? rejection.path)
         }
         if remaining != notices { notices = remaining }
+        let remainingPaths = Set(remaining.map(\.path))
+        duplicateNoticePaths = duplicateNoticePaths.filter { remainingPaths.contains($0.key) }
+    }
+    private func setNotices(_ rejections: [InputRejection]) {
+        // 검증 시점의 동일 파일 관계를 기억해 외부 파일 교체로 안내 대상이 바뀌지 않게 한다.
+        duplicateNoticePaths = [:]
+        for rejection in rejections where rejection.reason == "이미 목록에 있는 파일입니다." {
+            duplicateNoticePaths[rejection.path] = InputValidator.canonicalPath(URL(fileURLWithPath: rejection.path))
+        }
+        notices = rejections
     }
     func startWaiting() { schedule(queue.items.filter { $0.status == .waiting }.map(\.id)) }
     func retryFailures() { schedule(queue.items.filter { $0.status == .failed }.map(\.id)) }
