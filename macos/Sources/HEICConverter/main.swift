@@ -344,6 +344,29 @@ final class DropPanel: NSPanel {
         model.setClipboard(false)
         guard AppSettings.load(from: defaults).outputDirectory == folder.path,
               !AppSettings.load(from: defaults).clipboardEnabled else { return false }
+        // 화면에서 사용하는 중첩 값 변경도 저장되며 새 모델이 마지막 설정을 복구해야 한다.
+        for (format, quality, compression, metadata, conflict) in [
+            ("png", QualityPreset.medium, PNGCompressionPreset.small, "strip", "skip"),
+            ("jpeg", QualityPreset.raw, PNGCompressionPreset.none, "preserve", "overwrite"),
+        ] {
+            let output = folder.appendingPathComponent("설정 복구 \(format)").path
+            model.settings.options.outputFormat = format
+            model.settings.options.qualityPreset = quality
+            model.settings.options.pngCompressionPreset = compression
+            model.settings.options.metadata = metadata
+            model.settings.options.onConflict = conflict
+            model.settings.outputDirectory = output
+            let restored = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+            let recovered = restored.settings
+            restored.shutdown()
+            guard recovered.options.outputFormat == format,
+                  recovered.options.jpegQuality == quality.jpegQuality,
+                  recovered.options.pngCompression == compression.compressionLevel,
+                  recovered.options.metadata == metadata,
+                  recovered.options.onConflict == conflict,
+                  recovered.outputDirectory == output,
+                  !recovered.clipboardEnabled else { return false }
+        }
         print("드롭·붙여넣기·중복·거절·감지 재개·자동 표시 이벤트·설정 기억 확인 완료")
         return true
     } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
