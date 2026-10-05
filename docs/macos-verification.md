@@ -237,7 +237,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-d31de53951278ddca606794b297f603d502fb7c373462888a580edd3af04eec3
+89be925abf3a956fbfc7ba7aba30397e4d7e72b837adea6e7293b03f3d4983f8
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
@@ -399,3 +399,7 @@ GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작
   마지막 파일 썸네일 표시를 확인했다. 검증 앱은 종료 후 제거했다.
 - 최신 앱·DMG의 입력·설정·패널 smoke, 합성 SDR/HDR worker 변환, arm64·로더·
   서명·체크섬과 설치 복사본 실행 검증을 통과했다.
+
+- CI에서 RunLoop.run(until:)가 조기 반환하여 높이 갱신 전에 검사하는 문제를
+  발견했다. smoke의 대기를 실제 마감 시간까지 반복하도록 수정하고 로컬
+  앱·DMG 전체 검증을 다시 통과했다. 최종 CI는 PR 검사에 기록한다.
