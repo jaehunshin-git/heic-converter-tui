@@ -93,9 +93,9 @@ screen's available area. The compact panel defaults to 420 × 560 points, with a
 380 × 560 minimum. Settings start collapsed, with the small JPEG/PNG selector,
 quality or PNG compression, and right-aligned destination on one line below the
 header. Long paths shorten from the beginning to show the end. Expanded settings
-use smaller selector text and a compact destination Change button. Metadata and
-conflict policies sit side by side with centered labels and menus sized to their
-content.
+use native pickers for format, quality or compression, metadata, and conflict
+policies. Metadata and conflict fields sit side by side; the destination has a
+Change button.
 Hover over the JPEG quality selector for the encoder explanation. Your latest
 conversion settings and destination are restored after restarting the app. Native blur and translucent cards use a stronger background for
 readability. **Reduce transparency** and increased contrast prioritize readability.
