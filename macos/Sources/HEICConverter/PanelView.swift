@@ -205,20 +205,19 @@ struct PanelView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Divider()
-            HStack(spacing: 12) {
+            HStack(spacing: 0) {
                 HStack(spacing: 6) {
                     Text("메타데이터").font(.caption).foregroundStyle(.secondary).fixedSize()
                     Picker("메타데이터", selection: $model.settings.options.metadata) {
                         Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
                     }.labelsHidden().fixedSize()
-                }
+                }.frame(maxWidth: .infinity, alignment: .center)
                 HStack(spacing: 6) {
                     Text("동일 이름").font(.caption).foregroundStyle(.secondary).fixedSize()
                     Picker("동일 이름", selection: $model.settings.options.onConflict) {
                         Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
                     }.labelsHidden().fixedSize()
-                }
-                Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity, alignment: .center)
             }.controlSize(.small)
             outputLocation(editable: true)
         }
