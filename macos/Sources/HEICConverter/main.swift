@@ -24,6 +24,7 @@ final class DropPanel: NSPanel {
     private var panel: DropPanel!
     private var countSubscription: AnyCancellable?
     private var isPositioningPanel = false
+    private var panelRevealTimer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -48,12 +49,13 @@ final class DropPanel: NSPanel {
         panel.minSize = NSSize(width: 480, height: 600)
         panel.delegate = self
         let contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
-            self?.panel.orderOut(nil)
+            self?.hidePanel()
         }))
         // 스크롤 콘텐츠의 intrinsic 높이가 창 크기를 덮어쓰지 않도록 한다.
         contentView.sizingOptions = []
         panel.contentView = contentView
         panel.setContentSize(NSSize(width: 520, height: 650))
+        model.onClipboardFilesAdded = { [weak self] in self?.showPanelForClipboard() }
         observeAnchorChanges()
         countSubscription = model.$queue.sink { [weak self] queue in
             self?.statusItem.button?.title = " \(queue.waitingCount)"
@@ -112,20 +114,81 @@ final class DropPanel: NSPanel {
         NSApp.deactivate()
         check("비활성화 후 표시 유지", panel.isVisible)
         _ = windowShouldClose(panel); check("닫기 후 숨김", !panel.isVisible)
+        let wasActive = NSApp.isActive
+        let previousKeyWindow = NSApp.keyWindow
+        showPanelForClipboard(animated: false)
+        check("클립보드 자동 표시", panel.isVisible && panel.alphaValue == 1)
+        check("자동 표시 시 포커스 유지", NSApp.isActive == wasActive && NSApp.keyWindow === previousKeyWindow && !panel.isKeyWindow)
+        check("자동 표시 배치", panelPlacementSmokeTest())
+        let visibleFrame = panel.frame
+        showPanelForClipboard(animated: true)
+        check("이미 열린 패널 유지", panel.isVisible && panel.frame == visibleFrame && panelRevealTimer == nil)
+        hidePanel()
+        showPanelForClipboard(animated: true)
+        check("자동 표시 애니메이션 시작", panel.isVisible && panelRevealTimer != nil && panel.alphaValue == 0)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        check("자동 표시 애니메이션 완료", panel.isVisible && panelRevealTimer == nil && panel.alphaValue == 1 && panelPlacementSmokeTest())
+        check("애니메이션 후 포커스 유지", NSApp.isActive == wasActive && NSApp.keyWindow === previousKeyWindow && !panel.isKeyWindow)
+        hidePanel()
+        showPanelForClipboard(animated: true)
+        hidePanel()
+        check("등장 도중 닫기", !panel.isVisible && panelRevealTimer == nil && panel.alphaValue == 1)
         togglePanel(); check("닫기 후 다시 표시", panel.isVisible)
+        check("직접 열기와 CmdV 처리", panel.canBecomeKey && pasteShortcutSmokeTest())
         model.shutdown()
         print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
         exit(passed ? 0 : 1)
     }
 
     @objc func togglePanel() {
-        if panel.isVisible { panel.orderOut(nil) }
+        if panel.isVisible { hidePanel() }
         else {
             guard anchorGeometry() != nil else { return }
             positionPanel()
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
         }
+    }
+
+    /// 새 클립보드 파일은 보여 주되 사용 중인 앱의 키보드 포커스는 유지한다.
+    private func showPanelForClipboard(animated: Bool? = nil) {
+        guard !panel.isVisible, anchorGeometry() != nil else { return }
+        positionPanel()
+        let target = panel.frame
+        let shouldAnimate = animated ?? !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldAnimate else {
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+            return
+        }
+        // 이동량을 메뉴 막대와의 간격 안으로 제한해 화면 상단을 침범하지 않는다.
+        let distance = min(6, PanelPlacement.anchorGap)
+        panel.setFrame(target.offsetBy(dx: 0, dy: distance), display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        let start = Date()
+        let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                let progress = min(1, Date().timeIntervalSince(start) / 0.22)
+                let eased = 1 - pow(1 - progress, 3)
+                self.panel.alphaValue = eased
+                self.panel.setFrame(target.offsetBy(dx: 0, dy: distance * (1 - eased)), display: true)
+                if progress == 1 {
+                    timer.invalidate(); self.panelRevealTimer = nil
+                    self.positionPanel()
+                }
+            }
+        }
+        panelRevealTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func hidePanel() {
+        panelRevealTimer?.invalidate(); panelRevealTimer = nil
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+        positionPanel()
     }
 
     private func observeAnchorChanges() {
@@ -159,7 +222,7 @@ final class DropPanel: NSPanel {
     }
 
     @objc private func reanchorVisiblePanel() {
-        if panel?.isVisible == true { positionPanel() }
+        if panel?.isVisible == true, panelRevealTimer == nil { positionPanel() }
     }
 
     private func positionPanel() {
@@ -192,10 +255,23 @@ final class DropPanel: NSPanel {
         return passed
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
+    private func pasteShortcutSmokeTest() -> Bool {
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                                          timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+                                          characters: "v", charactersIgnoringModifiers: "v", isARepeat: false,
+                                          keyCode: 9) else { return false }
+        let originalHandler = panel.onPaste
+        defer { panel.onPaste = originalHandler }
+        var pasteCount = 0
+        panel.onPaste = { pasteCount += 1 }
+        return panel.performKeyEquivalent(with: event) && pasteCount == 1
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool { hidePanel(); return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()
+        panelRevealTimer?.invalidate(); panelRevealTimer = nil
         NotificationCenter.default.removeObserver(self)
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
     }
@@ -215,37 +291,53 @@ final class DropPanel: NSPanel {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let first = folder.appendingPathComponent("첫 파일.heic")
         let second = folder.appendingPathComponent("두 번째.HEIC")
+        let third = folder.appendingPathComponent("새 파일.heic")
+        let unsupported = folder.appendingPathComponent("지원 안 함.jpg")
         try Data([1]).write(to: first); try Data([2]).write(to: second)
+        try Data([3]).write(to: third); try Data([4]).write(to: unsupported)
         clipboard.writeObjects([first as NSURL])
         let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+        var automaticPresentationCount = 0
+        model.onClipboardFilesAdded = { automaticPresentationCount += 1 }
         defer { model.shutdown() }
         model.pollClipboard()
-        guard model.queue.items.isEmpty else { return false } // 시작 이전의 복사를 무시한다.
+        guard model.queue.items.isEmpty, automaticPresentationCount == 0 else { return false } // 시작 이전의 복사를 무시한다.
         model.stage([first, second])
         guard model.staged.count == 2, model.queue.items.isEmpty else { return false }
         model.staged.removeAll() // 드롭 후 취소한 파일은 다시 입력할 수 있다.
         model.stage([first, second]); model.acceptStaged(convert: false)
-        guard model.queue.items.count == 2, !model.active else { return false }
+        guard model.queue.items.count == 2, !model.active, automaticPresentationCount == 0 else { return false }
         model.paste()
-        guard model.queue.items.count == 2 else { return false }
+        guard model.queue.items.count == 2, automaticPresentationCount == 0 else { return false }
         model.queue.remove(InputValidator.canonicalPath(first))
         model.paste()
-        guard model.queue.items.count == 2 else { return false }
+        guard model.queue.items.count == 2, automaticPresentationCount == 0 else { return false }
         model.setClipboard(false)
         model.queue.remove(InputValidator.canonicalPath(second))
         clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
         model.pollClipboard()
-        guard model.queue.items.count == 1 else { return false }
+        guard model.queue.items.count == 1, automaticPresentationCount == 0 else { return false }
         model.setClipboard(true); model.pollClipboard()
-        guard model.queue.items.count == 1 else { return false } // 재개 시 기존 복사를 무시한다.
+        guard model.queue.items.count == 1, automaticPresentationCount == 0 else { return false } // 재개 시 기존 복사를 무시한다.
         clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
         model.pollClipboard()
-        guard model.queue.items.count == 2 else { return false }
+        guard model.queue.items.count == 2, !model.active, automaticPresentationCount == 1 else { return false }
+        clipboard.clearContents(); clipboard.writeObjects([second as NSURL, unsupported as NSURL])
+        model.pollClipboard()
+        guard model.queue.items.count == 2, automaticPresentationCount == 1 else { return false }
+        model.stage([third])
+        clipboard.clearContents(); clipboard.writeObjects([third as NSURL])
+        model.pollClipboard()
+        guard model.queue.items.count == 2, automaticPresentationCount == 1 else { return false }
+        model.staged.removeAll()
+        clipboard.clearContents(); clipboard.writeObjects([third as NSURL, unsupported as NSURL])
+        model.pollClipboard()
+        guard model.queue.items.count == 3, !model.active, automaticPresentationCount == 2 else { return false }
         model.settings.outputDirectory = folder.path
         model.setClipboard(false)
         guard AppSettings.load(from: defaults).outputDirectory == folder.path,
               !AppSettings.load(from: defaults).clipboardEnabled else { return false }
-        print("드롭 선택·취소·중복·직접 붙여넣기·감지 재개·설정 기억 확인 완료")
+        print("드롭·붙여넣기·중복·거절·감지 재개·자동 표시 이벤트·설정 기억 확인 완료")
         return true
     } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
 }
