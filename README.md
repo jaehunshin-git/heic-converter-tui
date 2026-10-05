@@ -89,16 +89,20 @@ For a checkout awaiting release, build the app with the
 3. Launch the app and click its menu bar icon to show the drop panel.
 
 The panel opens directly below its menu bar icon and stays within the current
-screen's available area. The compact panel defaults to 420 × 600 points, with a
-380 × 560 minimum. Settings start collapsed, with a small JPEG/PNG selector in
-the header and quality or PNG compression beside the destination on one line.
+screen's available area. The compact panel defaults to 420 × 560 points, with a
+380 × 560 minimum. Settings start collapsed, with a small JPEG/PNG selector
+on the left below the header. Quality or PNG compression and the right-aligned
+destination share one line; long paths shorten from the beginning to show the end.
 Expand them to change metadata and conflict policies, arranged side by side.
 Hover over the JPEG quality selector for the encoder explanation. Your latest
 conversion settings and destination are restored after restarting the app. Native blur and translucent cards use a stronger background for
 readability. **Reduce transparency** and increased contrast prioritize readability.
 Buttons share rounded corners; one clipboard button states “클립보드 감지 켜짐”
 or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. The neutral close button retains keyboard focus
-feedback; conversion and secondary actions occupy separate rows.
+feedback; conversion and secondary actions occupy separate rows. Main buttons
+respond to hovering and pressing, respecting Reduce motion; disabled buttons stay
+static. The file list has an icon, compact Retry and Clear buttons, and a smaller
+empty state.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
 the first launch, use **System Settings → Privacy & Security → Open Anyway**
@@ -106,6 +110,8 @@ after attempting to launch this app. Follow
 [Apple's instructions](https://support.apple.com/102445).
 DMG packaging does not bypass Gatekeeper.
 
+The drop zone explicitly invites dragging HEIC files and centers a compact Paste
+button. It shows hover, drag target, loading, accepted, and rejected feedback.
 Drop local `.heic` files, review the options, then choose **Convert now** or
 **Add to queue**. Queue items wait until you start conversion. Finder copies
 add accepted new files to the queue and reveal the panel below the menu bar icon
@@ -125,7 +131,8 @@ Existing user-selected destinations are preserved; only the known QA setting
 `/private/tmp/heic-converter-ui-check/converted` resets to the new default, without
 moving or deleting files. Home paths appear with `~` in the app.
 Removing an item allows that input to be added again; completed items otherwise
-remain deduplicated until cleared. Cancel finishes the current file and returns
+remain deduplicated until cleared. Duplicate notices clear when their related
+files leave the lists; other input errors remain. Cancel finishes the current file and returns
 unstarted files to the queue. New arrivals and option changes do not change an
 already scheduled job.
 
