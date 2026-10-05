@@ -10,6 +10,7 @@ struct PanelView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var closeFocused: Bool
+    @StateObject private var presentation = PanelPresentationState()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -117,55 +118,79 @@ struct PanelView: View {
     }
 
     private var settings: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("변환 설정", systemImage: "slider.horizontal.3").font(.headline)
-                Spacer()
-                Picker("형식", selection: $model.settings.options.outputFormat) {
-                    Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
-                }.pickerStyle(.segmented).frame(width: 160)
+        VStack(alignment: .leading, spacing: 10) {
+            Button { presentation.settingsExpanded.toggle() } label: {
+                HStack {
+                    Label("변환 설정", systemImage: "slider.horizontal.3").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(presentation.settingsExpanded ? "접기" : "펼치기").font(.caption)
+                    Image(systemName: presentation.settingsExpanded ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                }.foregroundStyle(.primary).contentShape(Rectangle())
             }
-            if model.settings.options.outputFormat == "jpeg" {
-                HStack {
-                    Text("품질").font(.caption).foregroundStyle(.secondary)
-                    Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
-                        ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
-                    }.pickerStyle(.segmented).labelsHidden()
-                }
-                Text("JPEG 품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
-                    .font(.caption).foregroundStyle(.secondary)
-                if model.settings.options.qualityPreset == .raw {
-                    Text("Raw도 손실 JPEG입니다. 최대 품질은 파일 크기가 크게 늘 수 있습니다.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+            .buttonStyle(.plain)
+            .accessibilityLabel("변환 설정")
+            .accessibilityValue(presentation.settingsExpanded ? "펼침" : "접힘")
+            .help("형식·품질·저장 위치를 요약합니다. 펼치면 메타데이터와 동일 이름 정책도 변경할 수 있습니다.")
+            if presentation.settingsExpanded {
+                expandedSettings
             } else {
-                HStack {
-                    Text("압축").font(.caption).foregroundStyle(.secondary)
-                    Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
-                        ForEach(PNGCompressionPreset.allCases) { preset in Text(preset.label).tag(preset) }
-                    }.pickerStyle(.segmented).labelsHidden()
+                HStack(spacing: 8) {
+                    Text(model.settings.options.outputFormat.uppercased()).font(.caption.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    Text(model.settings.options.outputFormat == "jpeg"
+                         ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
+                         : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
+                        .font(.caption).foregroundStyle(.primary)
                 }
-                Text("압축 수준 \(model.settings.options.pngCompression) · 화질은 동일하며 저장 시간과 파일 크기가 달라집니다.")
+                outputLocation(editable: false)
+            }
+        }.glassCard()
+    }
+
+    private var expandedSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("형식", selection: $model.settings.options.outputFormat) {
+                Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
+            }.pickerStyle(.segmented)
+            if model.settings.options.outputFormat == "jpeg" {
+                Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
+                    ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
+                }.pickerStyle(.segmented)
+                Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
+                    .font(.caption).foregroundStyle(.primary)
+                Text("인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
                     .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
+                    ForEach(PNGCompressionPreset.displayOrder) { preset in Text(preset.label).tag(preset) }
+                }.pickerStyle(.segmented)
+                Text("압축 \(model.settings.options.pngCompression) · 화질은 같고 저장 시간과 크기가 달라집니다.")
+                    .font(.caption).foregroundStyle(.primary)
                 Text("네이티브 HDR PNG에는 이 압축 설정이 적용되지 않습니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            HStack(spacing: 12) {
-                Picker("메타데이터", selection: $model.settings.options.metadata) {
-                    Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
-                }
-                Picker("동일 이름", selection: $model.settings.options.onConflict) {
-                    Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
-                }
-            }
             Divider()
-            HStack(spacing: 8) {
-                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(model.settings.displayOutputDirectory).font(.caption).lineLimit(1).truncationMode(.middle).help(model.settings.outputDirectory)
-                Spacer(minLength: 0)
-                Button("저장 위치 변경", action: model.chooseOutput)
+            Picker("메타데이터", selection: $model.settings.options.metadata) {
+                Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
             }
-        }.glassCard()
+            Picker("동일 이름", selection: $model.settings.options.onConflict) {
+                Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
+            }
+            outputLocation(editable: true)
+        }
+    }
+
+    private func outputLocation(editable: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
+                .lineLimit(1).truncationMode(.middle).help(model.settings.outputDirectory)
+            if editable {
+                Spacer(minLength: 0)
+                Button("변경", action: model.chooseOutput).accessibilityLabel("저장 위치 변경")
+            }
+        }
     }
 
     private var fileList: some View {
@@ -310,6 +335,10 @@ private struct ClipboardDetectionStyle: ToggleStyle {
             .accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
         }
     }
+}
+
+@MainActor private final class PanelPresentationState: ObservableObject {
+    @Published var settingsExpanded = false
 }
 
 private struct NeutralCloseButtonStyle: ButtonStyle {
