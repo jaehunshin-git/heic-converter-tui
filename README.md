@@ -90,12 +90,14 @@ For a checkout awaiting release, build the app with the
 
 The panel opens directly below its menu bar icon and stays within the current
 screen's available area. The compact panel defaults to 420 × 600 points, with a
-380 × 560 minimum. Settings start collapsed, summarizing format, JPEG quality or
-PNG compression, and destination; expand them to change metadata and conflict
-policies. Native blur and translucent cards use a stronger background for
+380 × 560 minimum. Settings start collapsed, with a small JPEG/PNG selector in
+the header and quality or PNG compression beside the destination on one line.
+Expand them to change metadata and conflict policies, arranged side by side.
+Hover over the JPEG quality selector for the encoder explanation. Your latest
+conversion settings and destination are restored after restarting the app. Native blur and translucent cards use a stronger background for
 readability. **Reduce transparency** and increased contrast prioritize readability.
-Buttons share rounded corners, clipboard detection uses one blue status button
-when enabled, and Quit is red. The neutral close button retains keyboard focus
+Buttons share rounded corners; one clipboard button states “클립보드 감지 켜짐”
+or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. The neutral close button retains keyboard focus
 feedback; conversion and secondary actions occupy separate rows.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
@@ -143,7 +145,8 @@ source files or conversion.
 
 Only local case-insensitive `.heic` files are accepted. Folders, symlinks,
 unreadable files, `.heif`, clipboard bitmap images, and Photos file promises are
-excluded with a reason. For Photos, export the unmodified HEIC original to Finder,
+excluded with a reason. Photos guidance appears in the drop zone tooltip and
+rejection messages, rather than as a persistent drop zone note. For Photos, export the unmodified HEIC original to Finder,
 then drop or copy that file. Direct Photos drops are tracked in
 [issue #4](https://github.com/jaehunshin-git/heic-converter-tui/issues/4); app naming
 and icon work is tracked separately in
