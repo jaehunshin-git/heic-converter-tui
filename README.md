@@ -89,12 +89,14 @@ For a checkout awaiting release, build the app with the
 3. Launch the app and click its menu bar icon to show the drop panel.
 
 The panel opens directly below its menu bar icon and stays within the current
-screen's available area. Its glassmorphism interface uses native macOS blur,
-more translucent cards, and subtle borders. **Reduce transparency** and increased
-contrast accessibility settings prioritize readability. Clipboard detection shows
-its enabled state in blue and in text. Larger folder, quit, and centered conversion
-buttons separate primary and secondary actions; the neutral close button retains
-keyboard focus feedback.
+screen's available area. The compact panel defaults to 420 × 600 points, with a
+380 × 560 minimum. Settings start collapsed, summarizing format, JPEG quality or
+PNG compression, and destination; expand them to change metadata and conflict
+policies. Native blur and translucent cards use a stronger background for
+readability. **Reduce transparency** and increased contrast prioritize readability.
+Buttons share rounded corners, clipboard detection uses one blue status button
+when enabled, and Quit is red. The neutral close button retains keyboard focus
+feedback; conversion and secondary actions occupy separate rows.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
 the first launch, use **System Settings → Privacy & Security → Open Anyway**
@@ -129,8 +131,8 @@ The macOS app offers four JPEG quality presets: **Low (60)**, **Medium (80)**,
 **High (90, default)**, and **Raw (100)**. Raw means maximum JPEG quality;
 the numbers are encoder quality settings, not percentages. JPEG remains lossy,
 and this option produces neither a RAW file nor lossless output. Existing saved
-numeric quality values remain unchanged until you choose a preset; the app displays the nearest preset. PNG offers **None (0)**, **Fast (3)**,
-**Balanced (6, default)**, and **Small (9)**. These preserve the same pixels while
+numeric quality values remain unchanged until you choose a preset; the app displays the nearest preset. PNG displays **Small (9)**,
+**Balanced (6, default)**, **Fast (3)**, and **None (0)** in that order. These preserve the same pixels while
 trading compression time for file size; native HDR PNG ignores this setting.
 Saved numeric values and scheduled job settings are preserved. The TUI and CLI
 retain their existing controls.
@@ -148,7 +150,10 @@ and icon work is tracked separately in
 [issue #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5).
 Clipboard detection uses a 0.75-second poll and skips
 existing clipboard content on startup or re-enable. A denied access status stops
-automatic reading; use file drops or direct paste instead.
+automatic reading; use file drops or direct paste instead. The app does not modify
+the clipboard or source files. Manual copying of converted results and moving
+results to Trash are planned in
+[issue #6](https://github.com/jaehunshin-git/heic-converter-tui/issues/6).
 
 ### CLI/TUI requirements
 
