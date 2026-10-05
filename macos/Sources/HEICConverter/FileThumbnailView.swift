@@ -114,7 +114,7 @@ final class FileThumbnailStore: @unchecked Sendable {
                               let source = CGImageSourceCreateWithURL(key as CFURL, [
                                 kCGImageSourceShouldCache: false,
                               ] as CFDictionary),
-                              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                              let image = CGImageSourceCreateThumbnailAtIndex(source, CGImageSourceGetPrimaryImageIndex(source), [
                                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                                 kCGImageSourceCreateThumbnailWithTransform: true,
                                 kCGImageSourceThumbnailMaxPixelSize: Self.maximumPixelSize,
@@ -244,8 +244,10 @@ private func runThumbnailSmokeTest() async -> Bool {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("heic-thumbnail-check-\(UUID().uuidString)", isDirectory: true)
     let url = directory.appendingPathComponent("synthetic.heic")
+    let multiImageURL = directory.appendingPathComponent("primary-second.heic")
     defer {
         FileThumbnailStore.shared.removeCachedThumbnail(for: url)
+        FileThumbnailStore.shared.removeCachedThumbnail(for: multiImageURL)
         try? FileManager.default.removeItem(at: directory)
     }
     do {
@@ -276,8 +278,39 @@ private func runThumbnailSmokeTest() async -> Bool {
         guard await store.thumbnail(for: url) == nil,
               await store.thumbnail(for: directory.appendingPathComponent("missing.heic")) == nil,
               await store.thumbnail(for: URL(string: "https://example.invalid/photo.heic")!) == nil else { return false }
-        return true
+        return await checkPrimaryImageThumbnail(at: multiImageURL)
     } catch {
         return false
+    }
+}
+
+/// 첫 이미지가 빨강이어도 대표 이미지인 두 번째 파랑을 미리보기해야 한다.
+private func checkPrimaryImageThumbnail(at url: URL) async -> Bool {
+    guard let context = CGContext(data: nil, width: 256, height: 128, bitsPerComponent: 8,
+                                  bytesPerRow: 256 * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL,
+              UTType.heic.identifier as CFString, 2, nil) else { return false }
+    for index in 0..<2 {
+        context.setFillColor(CGColor(red: index == 0 ? 1 : 0, green: 0, blue: index == 1 ? 1 : 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 256, height: 128))
+        guard let frame = context.makeImage() else { return false }
+        CGImageDestinationAddImage(destination, frame, [kCGImagePropertyPrimaryImage: index == 1] as CFDictionary)
+    }
+    guard CGImageDestinationFinalize(destination),
+          let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          CGImageSourceGetCount(source) == 2,
+          CGImageSourceGetPrimaryImageIndex(source) == 1,
+          let thumbnail = await FileThumbnailStore.shared.thumbnail(for: url),
+          thumbnail.width == 96, thumbnail.height == 48 else { return false }
+    var pixel = [UInt8](repeating: 0, count: 4)
+    return pixel.withUnsafeMutableBytes { bytes in
+        guard let sample = CGContext(data: bytes.baseAddress, width: 1, height: 1,
+                                     bitsPerComponent: 8, bytesPerRow: 4,
+                                     space: CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                        | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+        sample.draw(thumbnail, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return bytes[2] > 200 && bytes[0] < 50 && bytes[1] < 100
     }
 }
