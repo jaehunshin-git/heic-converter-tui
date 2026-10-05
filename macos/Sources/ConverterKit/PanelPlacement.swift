@@ -3,8 +3,8 @@ import CoreGraphics
 
 /// AppKit 화면 좌표(아래쪽 원점)에서 메뉴 막대 아이콘 아래의 패널 영역을 계산한다.
 public enum PanelPlacement {
-    public static let defaultSize = CGSize(width: 420, height: 560)
-    public static let minimumSize = CGSize(width: 380, height: 560)
+    public static let defaultSize = CGSize(width: 420, height: 520)
+    public static let minimumSize = CGSize(width: 380, height: 520)
     public static let edgeMargin: CGFloat = 8
     public static let anchorGap: CGFloat = 8
 
