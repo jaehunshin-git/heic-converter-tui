@@ -92,6 +92,43 @@ final class ConverterKitTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: result), Data([10, 20, 30]))
     }
+    func testFinishedFileReaddedToPendingJobKeepsLockAfterOldJobFinishes() throws {
+        let first = URL(fileURLWithPath: "/tmp/다시 예약.heic")
+        let second = URL(fileURLWithPath: "/tmp/변환 중.heic")
+        var queue = QueueState()
+        queue.add([first, second])
+        var settings = AppSettings()
+        queue.schedule(paths: [first.path, second.path], settings: settings)
+        let oldJob = try XCTUnwrap(queue.next())
+        queue.update(path: first.path, status: .succeeded, destination: "/tmp/이전 결과.jpeg")
+        queue.update(path: second.path, status: .running)
+        queue.removeSelected([first.path])
+        queue.add([first])
+        settings.options.outputFormat = "png"
+        settings.outputDirectory = "/tmp/새 결과 폴더"
+        queue.schedule(paths: [first.path], settings: settings)
+        let newJob = try XCTUnwrap(queue.jobs.first)
+        XCTAssertNotEqual(oldJob.id, newJob.id)
+        settings.options.outputFormat = "jpeg"
+        settings.outputDirectory = "/tmp/이후 변경 폴더"
+
+        // 이전 작업 완료는 같은 경로의 새 예약을 대기 상태로 되돌리지 않는다.
+        queue.finish()
+        XCTAssertEqual(queue.items.first(where: { $0.id == first.path })?.status, .scheduled)
+        XCTAssertEqual(queue.items.first(where: { $0.id == second.path })?.status, .waiting)
+        queue.removeAll()
+        XCTAssertEqual(queue.knownPaths, [first.path])
+        XCTAssertEqual(queue.jobs.map(\.id), [newJob.id])
+        let activated = try XCTUnwrap(queue.next())
+        XCTAssertEqual(activated.id, newJob.id)
+        XCTAssertEqual(activated.files, [first.path])
+        XCTAssertEqual(activated.options.outputFormat, "png")
+        XCTAssertEqual(activated.outputDirectory, "/tmp/새 결과 폴더")
+        queue.removeSelected([first.path]); queue.removeAll()
+        XCTAssertEqual(queue.knownPaths, [first.path])
+        XCTAssertEqual(queue.items.first?.status, .scheduled)
+        XCTAssertEqual(queue.activeJob?.id, newJob.id)
+    }
     func testClipboardBaselineDenialAndResume() {
         var gate = ClipboardGate(changeCount: 1)
         XCTAssertFalse(gate.shouldRead(changeCount: 1, enabled: true, accessDenied: false))
