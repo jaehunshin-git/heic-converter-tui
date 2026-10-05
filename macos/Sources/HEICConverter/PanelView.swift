@@ -160,7 +160,7 @@ struct PanelView: View {
                 expandedSettings
             } else {
                 HStack(spacing: 6) {
-                    formatSegments.frame(width: 88, height: 22)
+                    formatSegments.frame(width: 104, height: 22)
                     Text(model.settings.options.outputFormat == "jpeg"
                          ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
                          : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
