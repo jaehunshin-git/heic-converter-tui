@@ -4,9 +4,9 @@ import ConverterKit
 
 @MainActor final class AppModel: ObservableObject {
     @Published var settings: AppSettings { didSet { settings.save(to: settingsStore) } }
-    @Published var queue = QueueState()
+    @Published var queue = QueueState() { didSet { pruneDuplicateNotices() } }
     @Published var dropTargeted = false
-    @Published var staged: [URL] = []
+    @Published var staged: [URL] = [] { didSet { pruneDuplicateNotices() } }
     @Published var notices: [InputRejection] = []
     @Published var message = "HEIC 파일을 드롭하거나 Finder에서 복사하세요."
     @Published var clipboardMessage: String?
@@ -72,6 +72,21 @@ import ConverterKit
         let paths = staged.map(\.path)
         queue.add(staged); staged.removeAll()
         if convert { schedule(paths) }
+    }
+    func remove(_ path: String) {
+        queue.remove(InputValidator.canonicalPath(URL(fileURLWithPath: path)))
+    }
+    func clearCompleted() { queue.clearCompleted() }
+    func cancelStaged() { staged.removeAll() }
+
+    /// 중복 안내는 목록 상태에 종속된다. 지원 형식·권한 등 다른 입력 오류는 보존한다.
+    private func pruneDuplicateNotices() {
+        let listedPaths = Set((queue.items.map(\.url) + staged).map(InputValidator.canonicalPath))
+        let remaining = notices.filter { rejection in
+            rejection.reason != "이미 목록에 있는 파일입니다."
+                || listedPaths.contains(InputValidator.canonicalPath(URL(fileURLWithPath: rejection.path)))
+        }
+        if remaining != notices { notices = remaining }
     }
     func startWaiting() { schedule(queue.items.filter { $0.status == .waiting }.map(\.id)) }
     func retryFailures() { schedule(queue.items.filter { $0.status == .failed }.map(\.id)) }
