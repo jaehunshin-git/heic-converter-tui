@@ -3,8 +3,8 @@
 - 연결 이슈: [#2](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
 - 검증일: 2026-10-05
 - 기능 버전: 앱·wheel·sdist 0.3.0
-- CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37219168958)
-- CI 검증 커밋: `5e204cebe3f8cfff9cdeb6be99eb2d6e6714997a`
+- CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37256936704)
+- CI 검증 커밋: `4f650d8ec6063b2281789e76de3d33a1dd19182e`
 - 로컬: macOS 27.2, arm64, 앱 빌드 Python 3.12.12
 
 ## 기능과 근거
@@ -17,7 +17,7 @@
 | Finder·직접 붙여넣기·숨긴 상태 감지·중복·재시작·토글·접근 거부 | 실제 Finder 복사→자동 실행 없이 대기 항목 추가 확인. 이름 있는 임시 pasteboard를 사용한 앱 smoke, ClipboardGate 및 설정 저장 Swift 회귀. 타이머는 패널과 독립적으로 실행 |
 | 변환 중 추가·옵션 고정·취소·부분 실패·재시도·완료 정리 | Swift 대기열 회귀와 Python 배치/worker 회귀. 현재 파일 완료 뒤 취소, 완료 후 늦은 취소가 다음 작업을 방해하지 않는 회귀 |
 | 공백·한글 경로·권한·삭제·심볼릭 링크·동일 이름·충돌 정책 | Python 서비스/CLI/worker 및 Swift 입력 검증. 패키징 smoke의 실제 공백·한글 임시 경로. 파일 링크 거절과 macOS 시스템 경로 별칭의 실제 경로 중복 제거 |
-| 기존 CLI/TUI·worker 프로토콜·종료·취소·원자적 저장 | Python 83개 통과, Ruff 통과. Swift XCTest 15개 통과. SIGTERM 현재 파일 완료, EOF 완료 대기, 네이티브 stdout 진단 분리 |
+| 기존 CLI/TUI·worker 프로토콜·종료·취소·원자적 저장 | Python 83개 통과, Ruff 통과. Swift XCTest 23개 통과. SIGTERM 현재 파일 완료, EOF 완료 대기, 네이티브 stdout 진단 분리 |
 | SDR/HDR·메타데이터·색상 프로파일 | 개인 사진 없이 합성 Apple 게인 맵 생성. 실제 16비트 HDR PNG/PQ 색상 정보, safe/preserve/strip, JPEG SDR, 원본 바이트 보존 검증 |
 | macOS 15와 현재 지원 OS의 arm64 앱·독립 실행 설치 | CI macOS 15·26에서 앱 실행/DMG 검증 성공. 로컬 macOS 27.2도 성공. 임시 설치 위치의 복사본을 사용자 Python 없는 PATH/HOME으로 실행하여 실제 HEIC JPEG·PNG·HDR 변환 |
 | 네이티브 아키텍처·로더·서명·DMG·체크섬 | Mach-O 44개 arm64, 최소 OS, 로더 상대 경로, 각 코드 및 앱 ad-hoc 서명 검사. DMG 읽기 전용 마운트, 앱+Applications 링크, SHA-256 및 설치 복사본 재검증 |
@@ -47,6 +47,43 @@
   재조립하고 내장 worker의 합성 SDR/HDR 변환, 서명 및 설치 복사본을 검증했다.
   두 README를 반영한 wheel/sdist도 다시 빌드하여 영어 메타데이터와 허용 목록을 확인했다.
 
+## 사용 피드백 반영 검증
+
+- 신규 클립보드 입력이 실제 목록에 추가될 때만 자동 표시 이벤트가 발생한다.
+  앱 시작·감지 재개·중복·거절·직접 붙여넣기·드롭에는 발생하지 않는지 입력 모델
+  smoke에서 확인했다. 실제 Finder 복사 후 숨긴 패널이 열리고 자동 변환 없이
+  대기 상태를 유지했다. 패널 smoke는 다른 앱 포커스 유지, 열린 패널 유지,
+  0.22초 하강·페이드 완료, 등장 도중 닫기와 애니메이션 없는 경로를 검사했다.
+- 유리 소재 배경의 alpha는 0.72, 카드 배경은 어두운 모드 0.18·밝은 모드 0.22로
+  낮췄다. 텍스트와 컨트롤에는 opacity를 적용하지 않는다. 투명도 줄이기·높은 대비·
+  모션 줄이기는 코드 분기를 검토했으며 OS 접근성 설정을 변경한 시각 검증은 하지
+  않았다. 모션 줄이기에 사용하는 비애니메이션 표시 경로는 smoke에서 검사했다.
+- 신규 저장 위치 `~/Pictures/HEIC Converter`, 정확히 지정한 QA 경로의 복구,
+  기존 사용자 경로·옵션 유지, 홈 경로 표시, PNG 프리셋의 worker 수치와 예약 작업
+  스냅샷을 새 XCTest 8개로 검사했다. 실제 앱 화면에서 복구된 경로를 확인하고
+  합성 HEIC를 JPEG로 변환한 뒤 저장 폴더 열기와 완료 정리를 확인했다.
+- PNG 네 단계 버튼을 각각 눌러 압축 수준 0·3·6·9와 화질 동일/시간·크기 차이 안내,
+  네이티브 HDR PNG의 설정 미적용 안내를 확인했다. JPEG의 60·80·90·100과 Raw의
+  손실 JPEG 안내도 화면과 두 README에 반영했다. 기존 저장 수치는 선택 전 유지한다.
+- 선택 파일과 대기 목록에 같은 비동기 썸네일 컴포넌트를 사용한다. 디코딩은 최대
+  96픽셀, 캐시는 최대 96항목·4 MiB의 메모리로 제한한다. 합성 HEIC smoke는
+  회전·크기·원본 바이트 보존·캐시 재사용/제거·취소·교체·손상·누락·원격 URL 거절과
+  다중 HEIC의 대표 이미지 선택을 검사한다. 대표 이미지가 두 번째인 파일에서 첫
+  이미지를 선택하는 기존 구현은 회귀 검사에 실패했고 수정 후 통과했다.
+  실제 Finder 복사 목록과 변환 완료 목록에서도 썸네일을 확인했다.
+- 실제 화면에서 감지 켜짐의 파란색·글자, 꺼짐 상태, 확대된 저장 폴더/종료 버튼,
+  가운데 정렬된 전체 너비 변환 버튼과 중립색 닫기 테두리를 확인했다.
+  닫기 버튼은 키보드 포커스와 Escape를 유지하며 Tab 이동과 Cmd+V도 확인했다.
+- Photos의 파일 약속 입력은 수신하지 않고 미지원 안내를 표시한다. 상시 원본
+  내보내기 안내도 제공한다. 실제 Photos 직접 드롭 수신과 임시 파일 수명 검증은
+  [후속 이슈 #4](https://github.com/jaehunshin-git/heic-converter-tui/issues/4),
+  앱 이름과 아이콘 브랜딩은 [후속 이슈 #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5)로 분리했다.
+- Python 83개·Ruff·Swift XCTest 23개가 로컬에서 통과했다. CLT의 Swift 테스트
+  실행기가 XCTest를 0개로 보고하므로 로컬에서는 Xcode의 `xctest`로 실제 테스트
+  번들을 실행해 23개와 실패 0개를 확인했다. macOS 15·26 CI에서는 일반
+  `swift test`로 동일 테스트를 실행했다. 앱/DMG의 합성 SDR·HDR 변환, 설치본,
+  서명·체크섬과 wheel/sdist의 영어 메타데이터·허용 목록도 다시 통과했다.
+
 ## 검증 범위
 
 macOS 15·26은 GitHub의 arm64 VM, macOS 27.2는 로컬 Apple Silicon에서 검증했다.
@@ -70,7 +107,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-cfb70d7e86468ae526b87314e6c71db1daaec6d85de4f4388f4d111e6264e5e6
+53be9007e0c6a7bed8e686a649da36575344937e3391e25f236e2f0c8c33fddb
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
