@@ -161,7 +161,10 @@ public struct QueueState {
     }
     public mutating func finish() {
         if let job = activeJob {
-            for index in items.indices where job.files.contains(items[index].id) && items[index].status.locked {
+            // 완료 항목을 제거한 뒤 같은 파일을 다시 예약했으면 새 작업의 잠금을 유지한다.
+            let pendingPaths = Set(jobs.flatMap(\.files))
+            for index in items.indices where job.files.contains(items[index].id)
+                && items[index].status.locked && !pendingPaths.contains(items[index].id) {
                 items[index].status = .waiting
             }
         }
