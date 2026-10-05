@@ -304,6 +304,8 @@ final class DropPanel: NSPanel {
         try Data([3]).write(to: third); try Data([4]).write(to: unsupported)
         guard duplicateNoticeSmokeTest(first: first, second: second, unsupported: unsupported,
                                        clipboard: clipboard, defaults: defaults) else { return false }
+        guard bulkRemovalSmokeTest(first: first, second: second, third: third, unsupported: unsupported,
+                                   clipboard: clipboard, defaults: defaults) else { return false }
         clipboard.writeObjects([first as NSURL])
         let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
         var automaticPresentationCount = 0
@@ -372,6 +374,58 @@ final class DropPanel: NSPanel {
         print("드롭·붙여넣기·중복·거절·감지 재개·자동 표시 이벤트·설정 기억 확인 완료")
         return true
     } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
+}
+
+/// 일괄 제거는 목록과 중복 안내만 변경하고 예약 작업·원본·결과 파일을 보존한다.
+@MainActor private func bulkRemovalSmokeTest(first: URL, second: URL, third: URL, unsupported: URL,
+                                            clipboard: NSPasteboard, defaults: UserDefaults) -> Bool {
+    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+    defer { model.shutdown() }
+    let ids = [first, second, third].map(InputValidator.canonicalPath)
+    let duplicateReason = "이미 목록에 있는 파일입니다."
+    func duplicatePaths() -> Set<String> {
+        Set(model.notices.filter { $0.reason == duplicateReason }.map(\.path))
+    }
+    model.stage([first, second, third]); model.acceptStaged(convert: false)
+    model.queue.schedule(paths: [ids[0]], settings: model.settings)
+    guard let activeJob = model.queue.next() else { return false }
+    model.queue.update(path: ids[0], status: .running)
+    model.queue.schedule(paths: [ids[1]], settings: model.settings)
+    guard let scheduledJob = model.queue.jobs.first else { return false }
+    model.queue.update(path: ids[2], status: .failed)
+    model.stage([first, second, third, unsupported])
+    guard duplicatePaths() == Set([first, second, third].map(\.path)) else { return false }
+    model.removeSelected(Set(ids))
+    guard model.queue.knownPaths == Set(ids.prefix(2)),
+          duplicatePaths() == Set([first.path, second.path]),
+          model.queue.activeJob?.id == activeJob.id,
+          model.queue.jobs.map(\.id) == [scheduledJob.id] else { return false }
+    do {
+        let folder = third.deletingLastPathComponent()
+        let completed = folder.appendingPathComponent("일괄 제거 완료.heic")
+        let result = folder.appendingPathComponent("일괄 제거 결과.jpeg")
+        try Data([7]).write(to: completed); try Data([8]).write(to: result)
+        model.stage([completed], updateNotices: false); model.acceptStaged(convert: false)
+        model.queue.update(path: InputValidator.canonicalPath(completed), status: .succeeded, destination: result.path)
+        model.removeAll()
+        guard model.queue.knownPaths == Set(ids.prefix(2)),
+              duplicatePaths() == Set([first.path, second.path]),
+              model.queue.activeJob?.id == activeJob.id,
+              model.queue.jobs.map(\.id) == [scheduledJob.id] else { return false }
+        model.queue.finish(); model.removeAll()
+        guard model.queue.knownPaths == [ids[1]], duplicatePaths() == [second.path],
+              model.queue.next()?.id == scheduledJob.id else { return false }
+        model.queue.update(path: ids[1], status: .failed); model.queue.finish(); model.removeAll()
+        guard model.queue.items.isEmpty, duplicatePaths().isEmpty,
+              model.notices == [InputRejection(path: unsupported.path, reason: "확장자가 .heic인 파일만 지원합니다.")],
+              try Data(contentsOf: first) == Data([1]),
+              try Data(contentsOf: second) == Data([2]),
+              try Data(contentsOf: third) == Data([3]),
+              try Data(contentsOf: completed) == Data([7]),
+              try Data(contentsOf: result) == Data([8]) else { return false }
+    } catch { return false }
+    print("선택·전체 목록 제거·예약 작업 보존·중복 안내 정리·원본과 결과 파일 보존 확인 완료")
+    return true
 }
 
 /// 목록에서 사라진 파일의 중복 안내만 정리하고 다른 입력 오류는 유지한다.
