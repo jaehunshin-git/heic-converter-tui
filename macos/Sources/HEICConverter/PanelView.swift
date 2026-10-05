@@ -183,20 +183,18 @@ struct PanelView: View {
 
     private var expandedSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("형식", selection: $model.settings.options.outputFormat) {
-                Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
-            }.pickerStyle(.segmented)
+            formatSegments.frame(height: 26)
             if model.settings.options.outputFormat == "jpeg" {
-                Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
-                    ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
-                }.pickerStyle(.segmented)
+                CompactSegments(title: "JPEG 품질", selection: $model.settings.options.qualityPreset,
+                                choices: QualityPreset.allCases.map { SegmentChoice(value: $0, title: $0.label) })
+                    .frame(height: 26)
                     .help("Low 60 · Medium 80 · High 90 · Raw 100. 인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
                 Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
                     .font(.caption).foregroundStyle(.primary)
             } else {
-                Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
-                    ForEach(PNGCompressionPreset.displayOrder) { preset in Text(preset.label).tag(preset) }
-                }.pickerStyle(.segmented)
+                CompactSegments(title: "PNG 압축", selection: $model.settings.options.pngCompressionPreset,
+                                choices: PNGCompressionPreset.displayOrder.map { SegmentChoice(value: $0, title: $0.label) })
+                    .frame(height: 26)
                 Text("압축 \(model.settings.options.pngCompression) · 화질은 같고 저장 시간과 크기가 달라집니다.")
                     .font(.caption).foregroundStyle(.primary)
                 Text("네이티브 HDR PNG에는 이 압축 설정이 적용되지 않습니다.")
