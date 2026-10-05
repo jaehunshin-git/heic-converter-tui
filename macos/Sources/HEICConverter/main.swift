@@ -344,6 +344,7 @@ final class DropPanel: NSPanel {
 
 /// 합성 HEIC만 사용하여 설치된 번들의 worker와 프로토콜을 실제 변환까지 확인한다.
 func smokeTest() -> Int32 {
+    guard fileThumbnailSmokeTest() else { return 1 }
     guard let resources = Bundle.main.resourceURL else { return 1 }
     let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("heic-smoke-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: folder) }

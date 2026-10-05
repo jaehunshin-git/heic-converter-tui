@@ -133,5 +133,8 @@ import ConverterKit
     }
     func openOutput() { NSWorkspace.shared.open(URL(fileURLWithPath: settings.outputDirectory)) }
     func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-    func shutdown() { timer?.invalidate(); timer = nil; worker.stop() }
+    func shutdown() {
+        timer?.invalidate(); timer = nil; worker.stop()
+        FileThumbnailStore.shared.removeAllCachedThumbnails()
+    }
 }
