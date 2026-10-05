@@ -318,6 +318,8 @@ struct PanelView: View {
     }
 
     private func drop(_ providers: [NSItemProvider]) -> Bool {
+        let dropID = UUID()
+        presentation.latestDropID = dropID
         let supported = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
         guard !supported.isEmpty else {
             presentation.dropFeedback = .rejected
@@ -338,12 +340,16 @@ struct PanelView: View {
                 if let url { urls.append(url) }
             }
             if urls.isEmpty {
-                presentation.dropFeedback = .rejected
-                model.message = "파일 URL을 읽지 못했습니다. Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
+                if presentation.latestDropID == dropID {
+                    presentation.dropFeedback = .rejected
+                    model.message = "파일 URL을 읽지 못했습니다. Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
+                }
             } else {
                 let previousCount = model.staged.count
                 model.stage(urls)
-                presentation.dropFeedback = model.staged.count > previousCount ? .accepted : .rejected
+                if presentation.latestDropID == dropID {
+                    presentation.dropFeedback = model.staged.count > previousCount ? .accepted : .rejected
+                }
             }
         }
         return true
@@ -387,6 +393,7 @@ private extension View {
     @Published var settingsExpanded = false
     @Published var dropHovered = false
     @Published var dropFeedback: DropFeedback = .idle
+    var latestDropID = UUID()
 }
 
 @MainActor private final class PanelButtonInteractionState: ObservableObject {
