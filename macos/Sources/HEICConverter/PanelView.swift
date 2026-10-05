@@ -14,10 +14,10 @@ struct PanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header.padding(18)
-            Divider().padding(.horizontal, 18)
+            header.padding(14)
+            Divider().padding(.horizontal, 14)
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     dropZone
                     if !model.staged.isEmpty { stagedFiles }
                     settings
@@ -30,10 +30,10 @@ struct PanelView: View {
                             }
                         }.glassCard()
                     }
-                }.padding(18)
+                }.padding(14)
             }
-            Divider().padding(.horizontal, 18)
-            footer.padding(18)
+            Divider().padding(.horizontal, 14)
+            footer.padding(14)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
@@ -41,26 +41,26 @@ struct PanelView: View {
                 if reduceTransparency {
                     Color(nsColor: .windowBackgroundColor)
                 } else {
-                    PanelGlass(opacity: contrast == .increased ? 1 : 0.72)
-                    LinearGradient(colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.06 : 0.04), .clear, .white.opacity(0.04)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    PanelGlass(opacity: 1)
+                    Color(nsColor: .windowBackgroundColor).opacity(contrast == .increased ? 1 : 0.9)
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(contrast == .increased ? Color.primary.opacity(0.5) : Color.white.opacity(colorScheme == .dark ? 0.22 : 0.6), lineWidth: 1)
                 .allowsHitTesting(false)
         }
         .controlSize(.regular)
+        .buttonStyle(PanelActionButtonStyle())
     }
 
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "photo.badge.arrow.down.fill")
                 .font(.title2).foregroundStyle(Color.accentColor)
-                .frame(width: 42, height: 42)
+                .frame(width: 34, height: 34)
                 .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
@@ -77,8 +77,8 @@ struct PanelView: View {
     }
 
     private var dropZone: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "arrow.down.doc").font(.system(size: 28)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+        VStack(spacing: 6) {
+            Image(systemName: "arrow.down.doc").font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
             Text("HEIC 파일을 여기에 놓으세요").font(.headline)
             HStack(spacing: 8) {
                 Text("Finder 파일을 놓거나 붙여넣으세요.").font(.caption).foregroundStyle(.secondary)
@@ -87,7 +87,7 @@ struct PanelView: View {
             Text("Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity).padding(16)
+        .frame(maxWidth: .infinity).padding(12)
         .background(Color.accentColor.opacity(model.dropTargeted ? 0.18 : 0.06), in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(model.dropTargeted ? 0.8 : 0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
         .help("Photos 직접 드롭은 아직 지원하지 않습니다. Photos에서 수정되지 않은 HEIC 원본을 내보낸 뒤 Finder에서 드롭하세요.")
@@ -112,7 +112,7 @@ struct PanelView: View {
                 Button("취소") { model.staged.removeAll() }
                 Spacer()
                 Button("대기 목록에 추가") { model.acceptStaged(convert: false) }
-                Button("지금 변환") { model.acceptStaged(convert: true) }.buttonStyle(.borderedProminent)
+                Button("지금 변환") { model.acceptStaged(convert: true) }.buttonStyle(PanelActionButtonStyle(tone: .accent))
             }
         }.glassCard()
     }
@@ -199,14 +199,12 @@ struct PanelView: View {
                 Text("파일 목록").font(.headline)
                 Text("대기 \(model.waitingCount)개").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("실패 재시도", action: model.retryFailures).disabled(!model.queue.items.contains { $0.status == .failed })
-                Button("완료 정리") { model.queue.clearCompleted() }.disabled(!model.queue.items.contains { $0.status.finished })
+                Button("재시도", action: model.retryFailures).accessibilityLabel("실패 재시도").disabled(!model.queue.items.contains { $0.status == .failed })
+                Button("정리") { model.queue.clearCompleted() }.accessibilityLabel("완료 정리").disabled(!model.queue.items.contains { $0.status.finished })
             }
             if model.queue.items.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "tray").font(.title2).accessibilityHidden(true)
-                    Text("대기 중인 파일이 없습니다.").font(.caption)
-                }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 16)
+                Label("대기 중인 파일이 없습니다.", systemImage: "tray")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 12)
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(model.queue.items) { item in
@@ -231,8 +229,9 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(model.message).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.message).font(.caption).foregroundStyle(.primary).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if model.active {
                 HStack {
                     ProgressView().controlSize(.small)
@@ -241,19 +240,47 @@ struct PanelView: View {
             }
             Button(action: model.startWaiting) {
                 Label(model.active ? "대기 파일 변환 예약" : "대기 목록 변환 시작", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.headline).frame(maxWidth: .infinity, minHeight: 30)
+                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 22)
             }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .buttonStyle(PanelActionButtonStyle(tone: .accent))
             .disabled(!model.queue.items.contains { $0.status == .waiting })
-            HStack(spacing: 12) {
-                Toggle("클립보드 감지", isOn: Binding(get: { model.settings.clipboardEnabled }, set: model.setClipboard))
-                    .toggleStyle(ClipboardDetectionStyle())
-                Spacer(minLength: 0)
-                Button("저장 폴더 열기", action: model.openOutput).controlSize(.large)
-                Button("앱 종료") { NSApplication.shared.terminate(nil) }.controlSize(.large)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    clipboardButton
+                    Spacer(minLength: 0)
+                    outputButton
+                    quitButton
+                }
+                VStack(spacing: 8) {
+                    clipboardButton
+                    HStack(spacing: 8) { outputButton; quitButton }
+                }.frame(maxWidth: .infinity)
             }
             if let status = model.clipboardMessage { Text(status).font(.caption).foregroundStyle(.primary) }
         }
+    }
+
+    private var clipboardButton: some View {
+        Button { model.setClipboard(!model.settings.clipboardEnabled) } label: {
+            Label(model.settings.clipboardEnabled ? "클립보드 켜짐" : "클립보드 꺼짐",
+                  systemImage: model.settings.clipboardEnabled ? "checkmark.circle.fill" : "minus.circle")
+                .font(.caption.weight(.semibold)).fixedSize()
+        }
+        .buttonStyle(PanelActionButtonStyle(tone: model.settings.clipboardEnabled ? .detection : .neutral))
+        .accessibilityLabel("클립보드 감지")
+        .accessibilityValue(model.settings.clipboardEnabled ? "켜짐" : "꺼짐")
+        .help(model.settings.clipboardEnabled ? "클립보드 감지 끄기" : "클립보드 감지 켜기")
+    }
+
+    private var outputButton: some View {
+        Button("폴더 열기", action: model.openOutput).font(.caption.weight(.medium)).fixedSize()
+            .accessibilityLabel("저장 폴더 열기")
+    }
+
+    private var quitButton: some View {
+        Button("앱 종료") { NSApplication.shared.terminate(nil) }
+            .font(.caption.weight(.semibold)).fixedSize()
+            .buttonStyle(PanelActionButtonStyle(tone: .destructive))
     }
 
     private func drop(_ providers: [NSItemProvider]) -> Bool {
@@ -306,8 +333,8 @@ private struct GlassCard: ViewModifier {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
     func body(content: Content) -> some View {
-        content.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity((reduceTransparency || contrast == .increased) ? 1 : (colorScheme == .dark ? 0.18 : 0.22)), in: RoundedRectangle(cornerRadius: 16))
+        content.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity((reduceTransparency || contrast == .increased) ? 1 : (colorScheme == .dark ? 0.72 : 0.82)), in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(contrast == .increased ? 0.4 : 0.08), lineWidth: 1).allowsHitTesting(false))
     }
 }
@@ -316,29 +343,30 @@ private extension View {
     func glassCard() -> some View { modifier(GlassCard()) }
 }
 
-/// 비활성 패널에서도 감지 상태를 색상과 글자로 함께 표시한다.
-private struct ClipboardDetectionStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 8) {
-            configuration.label.font(.caption)
-            Button { configuration.isOn.toggle() } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: configuration.isOn ? "checkmark.circle.fill" : "minus.circle")
-                    Text(configuration.isOn ? "켜짐" : "꺼짐").font(.caption.weight(.semibold))
-                }
-                .padding(.horizontal, 9).padding(.vertical, 7)
-                .foregroundStyle(configuration.isOn ? Color.white : Color.primary)
-                .background(configuration.isOn ? Color.blue : Color.primary.opacity(0.1), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("클립보드 감지")
-            .accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
-        }
-    }
-}
-
 @MainActor private final class PanelPresentationState: ObservableObject {
     @Published var settingsExpanded = false
+}
+
+/// 창 활성 여부와 무관하게 상태 색과 공통 모서리를 유지한다.
+private struct PanelActionButtonStyle: ButtonStyle {
+    enum Tone { case neutral, accent, detection, destructive }
+    var tone: Tone = .neutral
+    @Environment(\.isEnabled) private var enabled
+
+    private var tint: Color {
+        switch tone { case .accent: return .accentColor; case .detection: return .blue; case .destructive: return .red; case .neutral: return .primary }
+    }
+    private var filled: Bool { tone == .accent || tone == .destructive }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(enabled ? (filled ? Color.white : tint) : Color.secondary)
+            .padding(.horizontal, 10).padding(.vertical, 9)
+            .background((enabled && filled ? tint : tint.opacity(enabled ? 0.1 : 0.06))
+                .opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(tint.opacity(enabled ? 0.2 : 0.08), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
 }
 
 private struct NeutralCloseButtonStyle: ButtonStyle {
