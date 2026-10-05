@@ -90,8 +90,11 @@ For a checkout awaiting release, build the app with the
 
 The panel opens directly below its menu bar icon and stays within the current
 screen's available area. Its glassmorphism interface uses native macOS blur,
-translucent cards, and subtle borders. Enabling **Reduce transparency** in macOS
-accessibility settings switches to an opaque background for readability.
+more translucent cards, and subtle borders. **Reduce transparency** and increased
+contrast accessibility settings prioritize readability. Clipboard detection shows
+its enabled state in blue and in text. Larger folder, quit, and centered conversion
+buttons separate primary and secondary actions; the neutral close button retains
+keyboard focus feedback.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
 the first launch, use **System Settings → Privacy & Security → Open Anyway**
@@ -101,15 +104,22 @@ DMG packaging does not bypass Gatekeeper.
 
 Drop local `.heic` files, review the options, then choose **Convert now** or
 **Add to queue**. Queue items wait until you start conversion. Finder copies
-and direct pastes add files to the queue without opening the panel or converting.
+add accepted new files to the queue and reveal the panel below the menu bar icon
+without taking focus or starting conversion. Duplicate or rejected inputs, startup
+and re-enabled clipboard content do not trigger this reveal. Direct pastes add
+files to the queue without revealing the panel.
+An already open panel stays open, and the reveal respects Reduce motion.
 Closing the panel keeps the app, detection, and any current job running.
 Quit from the panel to stop the app.
 
-The default destination is `~/Downloads/HEIC Converter`, created on the first
+The default destination is `~/Pictures/HEIC Converter`, created on the first
 conversion. The defaults are JPEG, High quality (90), PNG compression 6, metadata
 `safe`, and conflict policy `rename`. App output is collected in the selected
 folder; the CLI continues to preserve directory layout. Settings and the saved
 destination persist, while the file list and clipboard history are never saved.
+Existing user-selected destinations are preserved; only the known QA setting
+`/private/tmp/heic-converter-ui-check/converted` resets to the new default, without
+moving or deleting files. Home paths appear with `~` in the app.
 Removing an item allows that input to be added again; completed items otherwise
 remain deduplicated until cleared. Cancel finishes the current file and returns
 unstarted files to the queue. New arrivals and option changes do not change an
@@ -117,14 +127,26 @@ already scheduled job.
 
 The macOS app offers four JPEG quality presets: **Low (60)**, **Medium (80)**,
 **High (90, default)**, and **Raw (100)**. Raw means maximum JPEG quality;
-JPEG remains lossy, and this option produces neither a RAW file nor lossless
-output. Existing saved numeric quality values remain unchanged until you choose
-a preset; the app displays the nearest preset. PNG keeps its compression slider.
-The TUI and CLI retain their existing quality controls.
+the numbers are encoder quality settings, not percentages. JPEG remains lossy,
+and this option produces neither a RAW file nor lossless output. Existing saved
+numeric quality values remain unchanged until you choose a preset; the app displays the nearest preset. PNG offers **None (0)**, **Fast (3)**,
+**Balanced (6, default)**, and **Small (9)**. These preserve the same pixels while
+trading compression time for file size; native HDR PNG ignores this setting.
+Saved numeric values and scheduled job settings are preserved. The TUI and CLI
+retain their existing controls.
+
+Selected and queued files have small previews decoded asynchronously with bounded
+in-memory caching. Unavailable previews use a fallback icon; previews do not alter
+source files or conversion.
 
 Only local case-insensitive `.heic` files are accepted. Folders, symlinks,
 unreadable files, `.heif`, clipboard bitmap images, and Photos file promises are
-excluded with a reason. Clipboard detection uses a 0.75-second poll and skips
+excluded with a reason. For Photos, export the unmodified HEIC original to Finder,
+then drop or copy that file. Direct Photos drops are tracked in
+[issue #4](https://github.com/jaehunshin-git/heic-converter-tui/issues/4); app naming
+and icon work is tracked separately in
+[issue #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5).
+Clipboard detection uses a 0.75-second poll and skips
 existing clipboard content on startup or re-enable. A denied access status stops
 automatic reading; use file drops or direct paste instead.
 
