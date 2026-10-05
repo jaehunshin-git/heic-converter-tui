@@ -25,6 +25,7 @@ final class DropPanel: NSPanel {
     private var countSubscription: AnyCancellable?
     private var inputSubscription: AnyCancellable?
     private var inputLayoutScheduled = false
+    private var settingsExpanded = false
     private var userPreferredHeight = PanelPlacement.defaultSize.height
     private var lastPositionedHeight = PanelPlacement.defaultSize.height
     private var isPositioningPanel = false
@@ -54,6 +55,8 @@ final class DropPanel: NSPanel {
         panel.delegate = self
         let contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
             self?.hidePanel()
+        }, onSettingsExpansionChanged: { [weak self] expanded in
+            self?.setSettingsExpanded(expanded)
         }))
         // 스크롤 콘텐츠의 intrinsic 높이가 창 크기를 덮어쓰지 않도록 한다.
         contentView.sizingOptions = []
@@ -238,6 +241,12 @@ final class DropPanel: NSPanel {
         if panel?.isVisible == true, panelRevealTimer == nil { positionPanel() }
     }
 
+    private func setSettingsExpanded(_ expanded: Bool) {
+        guard settingsExpanded != expanded else { return }
+        settingsExpanded = expanded
+        scheduleInputLayout()
+    }
+
     private func scheduleInputLayout() {
         guard !inputLayoutScheduled else { return }
         inputLayoutScheduled = true
@@ -259,7 +268,7 @@ final class DropPanel: NSPanel {
         panel.maxSize = available.size
         let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
                           height: max(userPreferredHeight, PanelPlacement.preferredHeight(
-                            fileCount: model.queue.items.count, stagedCount: model.staged.count)))
+                            fileCount: model.queue.items.count, stagedCount: model.staged.count, settingsExpanded: settingsExpanded)))
         let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         lastPositionedHeight = panel.frame.height
@@ -305,10 +314,12 @@ final class DropPanel: NSPanel {
         let originalQueue = model.queue
         let originalStaged = model.staged
         let originalHeight = userPreferredHeight
+        let originalExpanded = settingsExpanded
         let originalWidth = panel.frame.width
         defer {
             model.queue = originalQueue; model.staged = originalStaged
             userPreferredHeight = originalHeight
+            settingsExpanded = originalExpanded
             panel.setContentSize(NSSize(width: originalWidth, height: originalHeight))
             positionPanel()
         }
@@ -320,7 +331,7 @@ final class DropPanel: NSPanel {
             guard let geometry = anchorGeometry() else { return 0 }
             return min(PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame).height,
                        max(userPreferredHeight, PanelPlacement.preferredHeight(fileCount: model.queue.items.count,
-                                                                               stagedCount: model.staged.count)))
+                                                                               stagedCount: model.staged.count, settingsExpanded: settingsExpanded)))
         }
         func checkHeight(_ label: String) -> Bool {
             let result = panel.frame.height == expectedHeight()
@@ -332,8 +343,13 @@ final class DropPanel: NSPanel {
         model.queue.add([urls[0]]); await settle()
         guard checkHeight("첫 파일"), panel.frame.maxY == top,
               panel.frame.width == originalWidth else { return false }
+        setSettingsExpanded(true); await settle()
+        guard checkHeight("첫 파일·설정 펼침"), panel.frame.maxY == top,
+              panel.frame.width == originalWidth else { return false }
         model.queue.add(Array(urls.dropFirst())); await settle()
-        guard checkHeight("여러 파일"), panelPlacementSmokeTest() else { return false }
+        guard checkHeight("여러 파일·설정 펼침"), panelPlacementSmokeTest() else { return false }
+        setSettingsExpanded(false); await settle()
+        guard checkHeight("여러 파일·설정 접기") else { return false }
         panel.setContentSize(NSSize(width: originalWidth + 20, height: panel.frame.height)); await settle()
         guard userPreferredHeight == originalHeight else { return false }
         panel.setContentSize(NSSize(width: originalWidth, height: panel.frame.height)); await settle()
@@ -342,6 +358,10 @@ final class DropPanel: NSPanel {
         guard panel.frame.height == height else { return false }
         model.queue = QueueState(); await settle()
         guard checkHeight("목록 비움") else { return false }
+        setSettingsExpanded(true); await settle()
+        guard checkHeight("빈 목록·설정 펼침") else { return false }
+        setSettingsExpanded(false); await settle()
+        guard checkHeight("빈 목록·설정 접기") else { return false }
         model.staged = urls; await settle()
         guard checkHeight("드롭 선택") else { return false }
         model.queue.add(urls); model.staged = []; await settle()
@@ -352,9 +372,14 @@ final class DropPanel: NSPanel {
         print("수동 크기 검증: \(panel.frame)")
         model.queue.add([urls[0]]); await settle()
         guard panel.frame.height == manualHeight, panel.frame.width == originalWidth + 20 else { return false }
+        setSettingsExpanded(true); await settle()
+        guard checkHeight("수동 높이·설정 펼침") else { return false }
+        setSettingsExpanded(false); await settle()
+        guard panel.frame.height == manualHeight, panel.frame.width == originalWidth + 20 else { return false }
         hidePanel()
         model.queue.add(Array(urls.dropFirst()))
         showPanelForClipboard(animated: true)
+        setSettingsExpanded(true)
         model.queue.add([URL(fileURLWithPath: "/tmp/heic-panel-size-5.heic")])
         await settle(0.35)
         return panel.frame.height == expectedHeight() && panelPlacementSmokeTest()

@@ -95,7 +95,10 @@ quality or PNG compression, and right-aligned destination on one line below the
 header. Adding files increases the panel height to show thumbnails; the first three
 rows expand it to 620, 684, and 748 points. Longer lists scroll to the newest files,
 and the panel stays within the available screen area. Removing files reduces the
-automatic height, while a taller manually resized window is preserved. Long paths shorten from the beginning to show the end. Expanded settings
+automatic height, while a taller manually resized window is preserved. Expanding
+settings also increases the automatic height so the file list stays visible;
+collapsing them restores the compact height. Both sizes fit within the available
+screen area. Long paths shorten from the beginning to show the end. Expanded settings
 use native pickers for format, quality or compression, metadata, and conflict
 policies. Metadata and conflict fields sit side by side; the destination has a
 Change button.
