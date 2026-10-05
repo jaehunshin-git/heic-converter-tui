@@ -174,18 +174,20 @@ struct PanelView: View {
 
     private var expandedSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            formatSegments.fixedSize().frame(maxWidth: .infinity)
+            Picker("형식", selection: $model.settings.options.outputFormat) {
+                Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
+            }.pickerStyle(.segmented)
             if model.settings.options.outputFormat == "jpeg" {
-                CompactSegments(title: "JPEG 품질", selection: $model.settings.options.qualityPreset,
-                                choices: QualityPreset.allCases.map { SegmentChoice(value: $0, title: $0.label) })
-                    .fixedSize().frame(maxWidth: .infinity)
+                Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
+                    ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
+                }.pickerStyle(.segmented)
                     .help("Low 60 · Medium 80 · High 90 · Raw 100. 인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
                 Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
                     .font(.caption).foregroundStyle(.primary)
             } else {
-                CompactSegments(title: "PNG 압축", selection: $model.settings.options.pngCompressionPreset,
-                                choices: PNGCompressionPreset.displayOrder.map { SegmentChoice(value: $0, title: $0.label) })
-                    .fixedSize().frame(maxWidth: .infinity)
+                Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
+                    ForEach(PNGCompressionPreset.displayOrder) { preset in Text(preset.label).tag(preset) }
+                }.pickerStyle(.segmented)
                 Text("압축 \(model.settings.options.pngCompression) · 화질은 같고 저장 시간과 크기가 달라집니다.")
                     .font(.caption).foregroundStyle(.primary)
                 Text("네이티브 HDR PNG에는 이 압축 설정이 적용되지 않습니다.")
@@ -193,10 +195,18 @@ struct PanelView: View {
             }
             Divider()
             HStack(spacing: 10) {
-                policyMenu(title: "메타데이터", selection: $model.settings.options.metadata,
-                           choices: [("safe", "안전 보존"), ("preserve", "모두 보존"), ("strip", "제거")])
-                policyMenu(title: "동일 이름", selection: $model.settings.options.onConflict,
-                           choices: [("rename", "새 이름"), ("skip", "건너뛰기"), ("overwrite", "덮어쓰기"), ("error", "오류")])
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("메타데이터").font(.caption).foregroundStyle(.secondary)
+                    Picker("메타데이터", selection: $model.settings.options.metadata) {
+                        Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
+                    }.labelsHidden()
+                }.frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("동일 이름").font(.caption).foregroundStyle(.secondary)
+                    Picker("동일 이름", selection: $model.settings.options.onConflict) {
+                        Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
+                    }.labelsHidden()
+                }.frame(maxWidth: .infinity)
             }
             outputLocation(editable: true)
         }
@@ -207,30 +217,6 @@ struct PanelView: View {
                         choices: [SegmentChoice(value: "jpeg", title: "JPEG"), SegmentChoice(value: "png", title: "PNG")])
     }
 
-    private func policyMenu(title: String, selection: Binding<String>, choices: [(String, String)]) -> some View {
-        VStack(spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Menu {
-                ForEach(choices, id: \.0) { value, label in
-                    Button { selection.wrappedValue = value } label: {
-                        if selection.wrappedValue == value { Label(label, systemImage: "checkmark") }
-                        else { Text(label) }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(choices.first { $0.0 == selection.wrappedValue }?.1 ?? selection.wrappedValue)
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
-                }
-                .font(.caption).padding(.horizontal, 8).padding(.vertical, 5)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .accessibilityLabel(title)
-            .accessibilityValue(choices.first { $0.0 == selection.wrappedValue }?.1 ?? selection.wrappedValue)
-        }.frame(maxWidth: .infinity)
-    }
-
     private func outputLocation(editable: Bool) -> some View {
         HStack(spacing: 6) {
             Spacer(minLength: 0)
@@ -238,8 +224,7 @@ struct PanelView: View {
             Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
                 .lineLimit(1).truncationMode(.head).help(model.settings.outputDirectory)
             if editable {
-                Button("변경", action: model.chooseOutput).font(.caption)
-                    .buttonStyle(PanelActionButtonStyle(compact: true)).accessibilityLabel("저장 위치 변경")
+                Button("변경", action: model.chooseOutput).accessibilityLabel("저장 위치 변경")
             }
         }
     }
