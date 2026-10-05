@@ -114,6 +114,12 @@ final class FeedbackSettingsTests: XCTestCase {
         }
     }
 
+    func testDisplayOrderPlacesUncompressedOptionOnTheRight() {
+        XCTAssertEqual(PNGCompressionPreset.displayOrder, [.small, .balanced, .fast, .none])
+        XCTAssertEqual(PNGCompressionPreset.displayOrder.map(\.compressionLevel), [9, 6, 3, 0])
+        XCTAssertEqual(Set(PNGCompressionPreset.displayOrder), Set(PNGCompressionPreset.allCases))
+    }
+
     func testScheduledJobKeepsCompressionAndOutputDirectorySnapshot() {
         var settings = AppSettings()
         settings.options.pngCompression = 4
