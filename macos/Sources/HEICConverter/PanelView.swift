@@ -27,21 +27,26 @@ struct PanelView: View {
         VStack(spacing: 0) {
             header.padding(14)
             Divider().padding(.horizontal, 14)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    dropZone
-                    if !model.staged.isEmpty { stagedFiles }
-                    settings
-                    fileList
-                    if !model.notices.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(Array(model.notices.enumerated()), id: \.offset) { _, notice in
-                                Label("\(URL(fileURLWithPath: notice.path).lastPathComponent): \(notice.reason)", systemImage: "exclamationmark.triangle")
-                                    .font(.caption).foregroundStyle(.primary)
-                            }
-                        }.glassCard()
-                    }
-                }.padding(14)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        dropZone
+                        if !model.staged.isEmpty { stagedFiles }
+                        settings
+                        fileList
+                        if !model.notices.isEmpty {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(Array(model.notices.enumerated()), id: \.offset) { _, notice in
+                                    Label("\(URL(fileURLWithPath: notice.path).lastPathComponent): \(notice.reason)", systemImage: "exclamationmark.triangle")
+                                        .font(.caption).foregroundStyle(.primary)
+                                }
+                            }.glassCard()
+                        }
+                    }.padding(14)
+                    // 스크롤바가 없어도 같은 폭을 예약하여 펼침 시 카드가 움직이지 않는다.
+                    .frame(width: max(0, geometry.size.width - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)), alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             Divider().padding(.horizontal, 14)
             footer.padding(14)
