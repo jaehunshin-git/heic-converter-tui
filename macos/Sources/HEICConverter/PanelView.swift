@@ -27,26 +27,22 @@ struct PanelView: View {
         VStack(spacing: 0) {
             header.padding(14)
             Divider().padding(.horizontal, 14)
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        dropZone
-                        if !model.staged.isEmpty { stagedFiles }
-                        settings
-                        fileList
-                        if !model.notices.isEmpty {
-                            VStack(alignment: .leading, spacing: 5) {
-                                ForEach(Array(model.notices.enumerated()), id: \.offset) { _, notice in
-                                    Label("\(URL(fileURLWithPath: notice.path).lastPathComponent): \(notice.reason)", systemImage: "exclamationmark.triangle")
-                                        .font(.caption).foregroundStyle(.primary)
-                                }
-                            }.glassCard()
-                        }
-                    }.padding(14)
-                    // 스크롤바가 없어도 같은 폭을 예약하여 펼침 시 카드가 움직이지 않는다.
-                    .frame(width: max(0, geometry.size.width - NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)), alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            OverlayScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    dropZone
+                    if !model.staged.isEmpty { stagedFiles }
+                    settings
+                    fileList
+                    if !model.notices.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(Array(model.notices.enumerated()), id: \.offset) { _, notice in
+                                Label("\(URL(fileURLWithPath: notice.path).lastPathComponent): \(notice.reason)", systemImage: "exclamationmark.triangle")
+                                    .font(.caption).foregroundStyle(.primary)
+                            }
+                        }.glassCard()
+                    }
+                }.padding(14)
+                    .buttonStyle(PanelActionButtonStyle()).controlSize(.regular)
             }
             Divider().padding(.horizontal, 14)
             footer.padding(14)
@@ -437,6 +433,52 @@ private struct CompactSegments<Value: Hashable>: NSViewRepresentable {
         @objc func select(_ sender: NSSegmentedControl) {
             guard parent.choices.indices.contains(sender.selectedSegment) else { return }
             parent.selection = parent.choices[sender.selectedSegment].value
+        }
+    }
+}
+
+/// 네이티브 오버레이 스크롤바를 사용하여 좌우 여백을 동일하게 유지한다.
+private struct OverlayScrollView<Content: View>: NSViewRepresentable {
+    var content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = PanelScrollView()
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        let hosting = NSHostingView(rootView: hostedContent(context: context))
+        hosting.sizingOptions = [.intrinsicContentSize]
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = hosting
+        NSLayoutConstraint.activate([
+            hosting.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            hosting.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            hosting.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+        ])
+        return scrollView
+    }
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        (scrollView.documentView as? NSHostingView<AnyView>)?.rootView =
+            hostedContent(context: context)
+    }
+
+    private func hostedContent(context: Context) -> AnyView {
+        AnyView(content
+            .environment(\.colorScheme, context.environment.colorScheme)
+            .environment(\.layoutDirection, context.environment.layoutDirection)
+            .environment(\.locale, context.environment.locale)
+            .environment(\.isEnabled, context.environment.isEnabled))
+    }
+
+    private final class PanelScrollView: NSScrollView {
+        // 이 패널은 시스템 선호가 변경돼도 스크롤바 공간을 차감하지 않는다.
+        override var scrollerStyle: NSScroller.Style {
+            get { super.scrollerStyle }
+            set { super.scrollerStyle = .overlay }
         }
     }
 }
