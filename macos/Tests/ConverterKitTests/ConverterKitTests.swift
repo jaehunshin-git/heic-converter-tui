@@ -43,6 +43,55 @@ final class ConverterKitTests: XCTestCase {
         queue.schedule(paths: ["/a.heic"], settings: settings)
         XCTAssertEqual(queue.next()?.files, ["/a.heic"])
     }
+    func testBulkRemovalPreservesLockedJobsAndPhysicalFiles() throws {
+        let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let sources = (0..<7).map { folder.appendingPathComponent("사진 \($0).heic") }
+        for (index, source) in sources.enumerated() { try Data([UInt8(index)]).write(to: source) }
+        let result = folder.appendingPathComponent("완료 결과.jpeg")
+        try Data([10, 20, 30]).write(to: result)
+        var queue = QueueState()
+        queue.add(sources)
+        var settings = AppSettings()
+        queue.schedule(paths: [sources[0].path], settings: settings)
+        let activeJob = try XCTUnwrap(queue.next())
+        queue.update(path: sources[0].path, status: .running)
+        settings.options.outputFormat = "png"
+        queue.schedule(paths: [sources[1].path], settings: settings)
+        let scheduledJob = try XCTUnwrap(queue.jobs.first)
+        queue.update(path: sources[3].path, status: .failed)
+        queue.update(path: sources[4].path, status: .succeeded, destination: result.path)
+        queue.update(path: sources[5].path, status: .skipped)
+
+        // 선택되지 않은 대기 항목은 유지하고 잠긴 항목은 선택되어도 제거하지 않는다.
+        queue.removeSelected(Set(sources.prefix(6).map(\.path)).union(["존재하지 않는 ID"]))
+        XCTAssertEqual(queue.items.map(\.id), [sources[0].path, sources[1].path, sources[6].path])
+        XCTAssertEqual(queue.items.map(\.status), [.running, .scheduled, .waiting])
+        queue.removeAll()
+        XCTAssertEqual(queue.items.map(\.id), [sources[0].path, sources[1].path])
+        XCTAssertEqual(queue.activeJob?.id, activeJob.id)
+        XCTAssertEqual(queue.activeJob?.files, [sources[0].path])
+        XCTAssertEqual(queue.jobs.map(\.id), [scheduledJob.id])
+        XCTAssertEqual(queue.jobs.first?.files, [sources[1].path])
+        XCTAssertEqual(queue.jobs.first?.options.outputFormat, "png")
+
+        queue.finish()
+        queue.removeAll()
+        XCTAssertEqual(queue.items.map(\.id), [sources[1].path])
+        XCTAssertEqual(queue.next()?.id, scheduledJob.id)
+        queue.update(path: sources[1].path, status: .failed)
+        queue.finish()
+        queue.removeAll()
+        XCTAssertTrue(queue.items.isEmpty)
+        XCTAssertTrue(queue.jobs.isEmpty)
+        XCTAssertNil(queue.activeJob)
+        for (index, source) in sources.enumerated() {
+            XCTAssertEqual(try Data(contentsOf: source), Data([UInt8(index)]))
+        }
+        XCTAssertEqual(try Data(contentsOf: result), Data([10, 20, 30]))
+    }
     func testClipboardBaselineDenialAndResume() {
         var gate = ClipboardGate(changeCount: 1)
         XCTAssertFalse(gate.shouldRead(changeCount: 1, enabled: true, accessDenied: false))
