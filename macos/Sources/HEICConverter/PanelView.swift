@@ -232,7 +232,10 @@ struct PanelView: View {
             Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
                 .lineLimit(1).truncationMode(.head).help(model.settings.outputDirectory)
             if editable {
-                Button("변경", action: model.chooseOutput).accessibilityLabel("저장 위치 변경")
+                Button("변경", action: model.chooseOutput)
+                    .font(.system(size: 11, weight: .medium)).fixedSize()
+                    .buttonStyle(PanelActionButtonStyle(compact: true))
+                    .accessibilityLabel("저장 위치 변경")
             }
         }
     }

@@ -237,7 +237,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-d8a0e711750985be595f2bb22eef2ae97fe8667eac83c6282780edd939910b40
+c0b808239dfc592185aef412c48bbf58b8870ee8de5fce1c8fa950f5d3167c9e
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
@@ -359,3 +359,17 @@ GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작
   잘림 없는 표시도 확인했다. 검증 앱은 별도 저장소를 사용하며 종료 후 제거했다.
 - Xcode MCP 빌드·XCTest 26개, 최신 앱·DMG의 패키징 검증을 통과했다.
   합성 SDR/HDR worker 변환, arm64·로더·서명·체크섬 및 설치 복사본 검증 포함.
+
+
+## 저장 위치 변경 버튼 크기·글꼴 축소 (2026-10-05)
+
+- 실행 중인 HEIC Converter가 없는지 확인하고 Xcode 실행도 중지한 뒤 수정했다.
+- 펼친 설정의 변경 버튼에 11pt medium 글꼴과 fixedSize를 적용했다.
+  기존 compact 스타일로 가로 여백은 10→8pt, 세로 여백은 9→5pt로 줄였다.
+- 별도 설정 저장소의 같은 PanelView를 Computer Use로 확인했다.
+  최소 380pt 너비의 펼친 PNG 설정에서 작은 버튼과 경로 표시를 확인했고,
+  버튼 클릭으로 저장 위치 선택 창이 열린 뒤 취소하여 기존 경로가 유지됐다.
+  검증 앱은 종료 후 제거했다.
+- Xcode MCP 빌드와 최신 앱·DMG 패키징 검증을 통과했다.
+  입력·설정·패널 smoke, 합성 SDR/HDR worker 변환, arm64·로더·서명·체크섬
+  및 설치 복사본 검증 포함. 별도 회귀 테스트는 추가하지 않았다.
