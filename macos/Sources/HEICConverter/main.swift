@@ -242,14 +242,11 @@ final class DropPanel: NSPanel {
         guard !inputLayoutScheduled else { return }
         inputLayoutScheduled = true
         // @Published는 willSet에서 발행한다. 드롭→대기 목록 이동까지 합쳐서 계산한다.
-        let timer = Timer(timeInterval: 0, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.inputLayoutScheduled = false
-                if self.panelRevealTimer == nil { self.positionPanel() }
-            }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.inputLayoutScheduled = false
+            if self.panelRevealTimer == nil { self.positionPanel() }
         }
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func positionPanel() {
