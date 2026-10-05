@@ -34,7 +34,7 @@ final class DropPanel: NSPanel {
             button.target = self; button.action = #selector(togglePanel)
             button.toolTip = "HEIC Converter · 클릭하여 패널 열기 또는 숨기기"
         }
-        panel = DropPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 650),
+        panel = DropPanel(contentRect: NSRect(origin: .zero, size: PanelPlacement.defaultSize),
                           styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         panel.title = "HEIC Converter"
         panel.onPaste = { [weak self] in self?.model.paste() }
@@ -46,7 +46,7 @@ final class DropPanel: NSPanel {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.minSize = NSSize(width: 480, height: 600)
+        panel.minSize = PanelPlacement.minimumSize
         panel.delegate = self
         let contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
             self?.hidePanel()
@@ -54,7 +54,7 @@ final class DropPanel: NSPanel {
         // 스크롤 콘텐츠의 intrinsic 높이가 창 크기를 덮어쓰지 않도록 한다.
         contentView.sizingOptions = []
         panel.contentView = contentView
-        panel.setContentSize(NSSize(width: 520, height: 650))
+        panel.setContentSize(PanelPlacement.defaultSize)
         model.onClipboardFilesAdded = { [weak self] in self?.showPanelForClipboard() }
         observeAnchorChanges()
         countSubscription = model.$queue.sink { [weak self] queue in
@@ -107,6 +107,11 @@ final class DropPanel: NSPanel {
         check("포커스 상실 시 유지 설정", !panel.hidesOnDeactivate)
         check("플로팅 레벨", panel.level == .floating)
         check("최초 배치와 크기", panelPlacementSmokeTest())
+        if let geometry = anchorGeometry() {
+            let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame,
+                                                size: PanelPlacement.defaultSize)
+            check("간결한 기본 크기", panel.frame.size == expected.size)
+        }
         check("입력 모델", modelInputSmokeTest())
         togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
         togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
@@ -230,7 +235,8 @@ final class DropPanel: NSPanel {
         isPositioningPanel = true
         defer { isPositioningPanel = false }
         let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
-        panel.minSize = NSSize(width: min(480, available.width), height: min(600, available.height))
+        panel.minSize = NSSize(width: min(PanelPlacement.minimumSize.width, available.width),
+                               height: min(PanelPlacement.minimumSize.height, available.height))
         panel.maxSize = available.size
         let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
                           height: max(panel.frame.height, panel.minSize.height))
@@ -249,7 +255,8 @@ final class DropPanel: NSPanel {
         let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
         let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: frame.size)
         let passed = geometry.visibleFrame.contains(frame) && frame.maxY <= geometry.anchor.minY
-            && frame.width >= min(480, available.width) && frame.height >= min(600, available.height)
+            && frame.width >= min(PanelPlacement.minimumSize.width, available.width)
+            && frame.height >= min(PanelPlacement.minimumSize.height, available.height)
             && abs(frame.minX - expected.minX) < 1 && abs(frame.maxY - expected.maxY) < 1
         print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame), 배치 검증: \(passed)")
         return passed

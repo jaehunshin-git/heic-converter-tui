@@ -7,7 +7,8 @@ final class PanelPlacementTests: XCTestCase {
         let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
         let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
-                                         size: CGSize(width: 520, height: 650))
+                                         size: PanelPlacement.defaultSize)
+        XCTAssertEqual(frame.size, CGSize(width: 420, height: 600))
         XCTAssertEqual(frame.midX, anchor.midX)
         XCTAssertEqual(frame.maxY, anchor.minY - 8)
         XCTAssertTrue(visible.contains(frame))
