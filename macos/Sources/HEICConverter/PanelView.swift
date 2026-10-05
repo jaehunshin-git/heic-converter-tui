@@ -354,12 +354,26 @@ private struct PanelActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
 
     private var tint: Color {
-        switch tone { case .accent: return .accentColor; case .detection: return .blue; case .destructive: return .red; case .neutral: return .primary }
+        switch tone {
+        case .accent: return .accentColor
+        case .detection: return .blue
+        case .destructive: return Color(red: 0.82, green: 0.12, blue: 0.18)
+        case .neutral: return .primary
+        }
     }
     private var filled: Bool { tone == .accent || tone == .destructive }
+    private var filledForeground: Color {
+        guard tone == .accent, let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return .white }
+        func linear(_ value: CGFloat) -> CGFloat {
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent)
+            + 0.0722 * linear(color.blueComponent)
+        return luminance > 0.179 ? .black : .white
+    }
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(enabled ? (filled ? Color.white : tint) : Color.secondary)
+            .foregroundStyle(enabled ? (filled ? filledForeground : tint) : Color.secondary)
             .padding(.horizontal, 10).padding(.vertical, 9)
             .background((enabled && filled ? tint : tint.opacity(enabled ? 0.1 : 0.06))
                 .opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
