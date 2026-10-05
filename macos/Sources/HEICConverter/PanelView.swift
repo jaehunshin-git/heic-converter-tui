@@ -346,7 +346,7 @@ struct PanelView: View {
                 }
             } else {
                 let previousCount = model.staged.count
-                model.stage(urls)
+                model.stage(urls, updateNotices: presentation.latestDropID == dropID)
                 if presentation.latestDropID == dropID {
                     presentation.dropFeedback = model.staged.count > previousCount ? .accepted : .rejected
                 }

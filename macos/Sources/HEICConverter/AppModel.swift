@@ -65,9 +65,10 @@ import ConverterKit
             if !manual { onClipboardFilesAdded?() }
         }
     }
-    func stage(_ urls: [URL]) {
+    func stage(_ urls: [URL], updateNotices: Bool = true) {
         let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
-        staged.append(contentsOf: result.accepted); setNotices(result.rejected)
+        staged.append(contentsOf: result.accepted)
+        if updateNotices { setNotices(result.rejected) }
     }
     func acceptStaged(convert: Bool) {
         let paths = staged.map(\.path)
