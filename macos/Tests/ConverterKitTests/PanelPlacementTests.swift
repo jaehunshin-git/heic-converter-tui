@@ -3,6 +3,31 @@ import CoreGraphics
 @testable import ConverterKit
 
 final class PanelPlacementTests: XCTestCase {
+    func testFileHeightGrowsForThumbnailsAndStopsAfterThreeRows() {
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0), 520)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0), 620)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 2, stagedCount: 0), 684)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0), 748)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 0), 748)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 5), 700)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5), 800)
+    }
+
+    func testFileExpansionKeepsTopAndWidthAndFitsSmallScreen() {
+        let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
+        let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
+        let empty = PanelPlacement.frame(anchor: anchor, visibleFrame: visible, size: PanelPlacement.defaultSize)
+        let populated = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
+            size: CGSize(width: 420, height: PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0)))
+        XCTAssertEqual(empty.maxY, populated.maxY)
+        XCTAssertEqual(empty.width, populated.width)
+        XCTAssertGreaterThan(populated.height, empty.height)
+        let small = CGRect(x: 0, y: 400, width: 1440, height: 478)
+        let constrained = PanelPlacement.frame(anchor: anchor, visibleFrame: small, size: populated.size)
+        XCTAssertTrue(small.contains(constrained))
+        XCTAssertLessThan(constrained.height, populated.height)
+    }
+
     func testPanelOpensBelowIconAndStaysCentered() {
         let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)

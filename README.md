@@ -89,10 +89,13 @@ For a checkout awaiting release, build the app with the
 3. Launch the app and click its menu bar icon to show the drop panel.
 
 The panel opens directly below its menu bar icon and stays within the current
-screen's available area. The compact panel defaults to 420 × 560 points, with a
-380 × 560 minimum. Settings start collapsed, with the small JPEG/PNG selector,
+screen's available area. The compact panel defaults to 420 × 520 points, with a
+380 × 520 minimum. Settings start collapsed, with the small JPEG/PNG selector,
 quality or PNG compression, and right-aligned destination on one line below the
-header. Long paths shorten from the beginning to show the end. Expanded settings
+header. Adding files increases the panel height to show thumbnails; the first three
+rows expand it to 620, 684, and 748 points. Longer lists scroll to the newest files,
+and the panel stays within the available screen area. Removing files reduces the
+automatic height, while a taller manually resized window is preserved. Long paths shorten from the beginning to show the end. Expanded settings
 use native pickers for format, quality or compression, metadata, and conflict
 policies. Metadata and conflict fields sit side by side; the destination has a
 Change button.
