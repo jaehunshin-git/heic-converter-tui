@@ -70,6 +70,7 @@ final class DropPanel: NSPanel {
         }
         inputSubscription = model.$queue.map { $0.items.map(\.id) }.removeDuplicates()
             .combineLatest(model.$staged.map { $0.map(\.path) }.removeDuplicates())
+            .combineLatest(model.$settings.map { $0.options.outputFormat }.removeDuplicates())
             .sink { [weak self] _ in self?.scheduleInputLayout() }
         // WindowServer가 상태 막대 항목을 배치할 수 있도록 launch 콜백 다음 순서에 표시한다.
         DispatchQueue.main.async { [self] in
@@ -268,7 +269,7 @@ final class DropPanel: NSPanel {
         panel.maxSize = available.size
         let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
                           height: max(userPreferredHeight, PanelPlacement.preferredHeight(
-                            fileCount: model.queue.items.count, stagedCount: model.staged.count, settingsExpanded: settingsExpanded)))
+                            fileCount: model.queue.items.count, stagedCount: model.staged.count, settingsExpanded: settingsExpanded, outputFormat: model.settings.options.outputFormat)))
         let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         lastPositionedHeight = panel.frame.height
@@ -315,11 +316,13 @@ final class DropPanel: NSPanel {
         let originalStaged = model.staged
         let originalHeight = userPreferredHeight
         let originalExpanded = settingsExpanded
+        let originalFormat = model.settings.options.outputFormat
         let originalWidth = panel.frame.width
         defer {
             model.queue = originalQueue; model.staged = originalStaged
             userPreferredHeight = originalHeight
             settingsExpanded = originalExpanded
+            model.settings.options.outputFormat = originalFormat
             panel.setContentSize(NSSize(width: originalWidth, height: originalHeight))
             positionPanel()
         }
@@ -331,7 +334,7 @@ final class DropPanel: NSPanel {
             guard let geometry = anchorGeometry() else { return 0 }
             return min(PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame).height,
                        max(userPreferredHeight, PanelPlacement.preferredHeight(fileCount: model.queue.items.count,
-                                                                               stagedCount: model.staged.count, settingsExpanded: settingsExpanded)))
+                                                                               stagedCount: model.staged.count, settingsExpanded: settingsExpanded, outputFormat: model.settings.options.outputFormat)))
         }
         func checkHeight(_ label: String) -> Bool {
             let result = panel.frame.height == expectedHeight()
@@ -360,6 +363,11 @@ final class DropPanel: NSPanel {
         guard checkHeight("목록 비움") else { return false }
         setSettingsExpanded(true); await settle()
         guard checkHeight("빈 목록·설정 펼침") else { return false }
+        model.settings.options.outputFormat = "png"; await settle()
+        guard checkHeight("펼친 PNG로 전환") else { return false }
+        model.settings.options.outputFormat = "jpeg"; await settle()
+        guard checkHeight("펼친 JPEG로 전환") else { return false }
+        model.settings.options.outputFormat = originalFormat; await settle()
         setSettingsExpanded(false); await settle()
         guard checkHeight("빈 목록·설정 접기") else { return false }
         model.staged = urls; await settle()

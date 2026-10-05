@@ -14,10 +14,12 @@ final class PanelPlacementTests: XCTestCase {
     }
 
     func testExpandedSettingsPreserveThumbnailSpace() {
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true), 700)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0, settingsExpanded: true), 800)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true), 928)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5, settingsExpanded: true), 980)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true), 656)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0, settingsExpanded: true), 756)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true), 884)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5, settingsExpanded: true), 936)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 684)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 912)
         // 펼침 상태를 되돌리면 기존 간결한 높이 정책으로 돌아간다.
         XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: false), 748)
     }
