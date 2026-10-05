@@ -237,7 +237,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-89be925abf3a956fbfc7ba7aba30397e4d7e72b837adea6e7293b03f3d4983f8
+d5a1f780e2ebc396840efdd0804956358d5ba6451dfa8dbe4809dbf8686b447c
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
@@ -400,6 +400,7 @@ GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작
 - 최신 앱·DMG의 입력·설정·패널 smoke, 합성 SDR/HDR worker 변환, arm64·로더·
   서명·체크섬과 설치 복사본 실행 검증을 통과했다.
 
-- CI에서 RunLoop.run(until:)가 조기 반환하여 높이 갱신 전에 검사하는 문제를
-  발견했다. smoke의 대기를 실제 마감 시간까지 반복하도록 수정하고 로컬
-  앱·DMG 전체 검증을 다시 통과했다. 최종 CI는 PR 검사에 기록한다.
+- CI에서 중첩 RunLoop 대기 중 높이 갱신이 처리되지 않아 검사가 먼저 끝나는
+  문제를 발견했다. smoke를 비동기 Task로 실행하고 대기 중 실행권을 반환해
+  실제 AppKit 이벤트 루프가 갱신하도록 수정했다. Xcode MCP의 28개 테스트와
+  로컬 앱·DMG 전체 검증을 다시 통과했다. 최종 CI는 PR 검사에 기록한다.
