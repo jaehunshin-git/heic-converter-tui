@@ -84,8 +84,6 @@ struct PanelView: View {
                 Text("Finder 파일을 놓거나 붙여넣으세요.").font(.caption).foregroundStyle(.secondary)
                 Button("붙여넣기", action: model.paste).keyboardShortcut("v", modifiers: .command)
             }
-            Text("Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요.")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(12)
         .background(Color.accentColor.opacity(model.dropTargeted ? 0.18 : 0.06), in: RoundedRectangle(cornerRadius: 16))
@@ -119,6 +117,7 @@ struct PanelView: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
             Button { presentation.settingsExpanded.toggle() } label: {
                 HStack {
                     Label("변환 설정", systemImage: "slider.horizontal.3").font(.subheadline.weight(.semibold))
@@ -131,19 +130,23 @@ struct PanelView: View {
             .accessibilityLabel("변환 설정")
             .accessibilityValue(presentation.settingsExpanded ? "펼침" : "접힘")
             .help("형식·품질·저장 위치를 요약합니다. 펼치면 메타데이터와 동일 이름 정책도 변경할 수 있습니다.")
+            if !presentation.settingsExpanded {
+                Picker("형식", selection: $model.settings.options.outputFormat) {
+                    Text("JPEG").tag("jpeg"); Text("PNG").tag("png")
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).frame(width: 112)
+            }
+            }
             if presentation.settingsExpanded {
                 expandedSettings
             } else {
-                HStack(spacing: 8) {
-                    Text(model.settings.options.outputFormat.uppercased()).font(.caption.weight(.semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                HStack(spacing: 6) {
                     Text(model.settings.options.outputFormat == "jpeg"
                          ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
                          : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
-                        .font(.caption).foregroundStyle(.primary)
+                        .font(.caption).fixedSize()
+                    Divider().frame(height: 12)
+                    outputLocation(editable: false).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                outputLocation(editable: false)
             }
         }.glassCard()
     }
@@ -157,10 +160,9 @@ struct PanelView: View {
                 Picker("JPEG 품질", selection: $model.settings.options.qualityPreset) {
                     ForEach(QualityPreset.allCases) { preset in Text(preset.label).tag(preset) }
                 }.pickerStyle(.segmented)
+                    .help("Low 60 · Medium 80 · High 90 · Raw 100. 인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
                 Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
                     .font(.caption).foregroundStyle(.primary)
-                Text("인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
-                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Picker("PNG 압축", selection: $model.settings.options.pngCompressionPreset) {
                     ForEach(PNGCompressionPreset.displayOrder) { preset in Text(preset.label).tag(preset) }
@@ -171,11 +173,19 @@ struct PanelView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Divider()
-            Picker("메타데이터", selection: $model.settings.options.metadata) {
-                Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
-            }
-            Picker("동일 이름", selection: $model.settings.options.onConflict) {
-                Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("메타데이터").font(.caption).foregroundStyle(.secondary)
+                    Picker("메타데이터", selection: $model.settings.options.metadata) {
+                        Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
+                    }.labelsHidden()
+                }.frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("동일 이름").font(.caption).foregroundStyle(.secondary)
+                    Picker("동일 이름", selection: $model.settings.options.onConflict) {
+                        Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
+                    }.labelsHidden()
+                }.frame(maxWidth: .infinity)
             }
             outputLocation(editable: true)
         }
@@ -262,7 +272,7 @@ struct PanelView: View {
 
     private var clipboardButton: some View {
         Button { model.setClipboard(!model.settings.clipboardEnabled) } label: {
-            Label(model.settings.clipboardEnabled ? "클립보드 켜짐" : "클립보드 꺼짐",
+            Label(model.settings.clipboardEnabled ? "클립보드 감지 켜짐" : "클립보드 감지 꺼짐",
                   systemImage: model.settings.clipboardEnabled ? "checkmark.circle.fill" : "minus.circle")
                 .font(.caption.weight(.semibold)).fixedSize()
         }
