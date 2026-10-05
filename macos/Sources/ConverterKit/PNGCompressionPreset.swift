@@ -4,6 +4,8 @@ public enum PNGCompressionPreset: String, CaseIterable, Identifiable {
     case balanced
     case small
 
+    public static let displayOrder: [PNGCompressionPreset] = [.small, .balanced, .fast, .none]
+
     public var id: String { rawValue }
     public var label: String {
         switch self {
