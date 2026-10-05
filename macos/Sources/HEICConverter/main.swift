@@ -23,6 +23,10 @@ final class DropPanel: NSPanel {
     private var statusItem: NSStatusItem!
     private var panel: DropPanel!
     private var countSubscription: AnyCancellable?
+    private var inputSubscription: AnyCancellable?
+    private var inputLayoutScheduled = false
+    private var userPreferredHeight = PanelPlacement.defaultSize.height
+    private var lastPositionedHeight = PanelPlacement.defaultSize.height
     private var isPositioningPanel = false
     private var panelRevealTimer: Timer?
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -61,6 +65,9 @@ final class DropPanel: NSPanel {
             self?.statusItem.button?.title = " \(queue.waitingCount)"
             self?.reanchorVisiblePanel()
         }
+        inputSubscription = model.$queue.map { $0.items.map(\.id) }.removeDuplicates()
+            .combineLatest(model.$staged.map { $0.map(\.path) }.removeDuplicates())
+            .sink { [weak self] _ in self?.scheduleInputLayout() }
         // WindowServer가 상태 막대 항목을 배치할 수 있도록 launch 콜백 다음 순서에 표시한다.
         DispatchQueue.main.async { [self] in
             showInitialPanelWhenReady(until: Date().addingTimeInterval(5))
@@ -113,6 +120,7 @@ final class DropPanel: NSPanel {
             check("간결한 기본 크기", panel.frame.size == expected.size)
         }
         check("입력 모델", modelInputSmokeTest())
+        check("파일 추가 높이와 수동 크기 보존", inputPanelSizingSmokeTest())
         togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
         togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
         check("다시 표시한 배치와 크기", panelPlacementSmokeTest())
@@ -230,6 +238,20 @@ final class DropPanel: NSPanel {
         if panel?.isVisible == true, panelRevealTimer == nil { positionPanel() }
     }
 
+    private func scheduleInputLayout() {
+        guard !inputLayoutScheduled else { return }
+        inputLayoutScheduled = true
+        // @Published는 willSet에서 발행한다. 드롭→대기 목록 이동까지 합쳐서 계산한다.
+        let timer = Timer(timeInterval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.inputLayoutScheduled = false
+                if self.panelRevealTimer == nil { self.positionPanel() }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     private func positionPanel() {
         guard !isPositioningPanel, let geometry = anchorGeometry() else { return }
         isPositioningPanel = true
@@ -239,12 +261,20 @@ final class DropPanel: NSPanel {
                                height: min(PanelPlacement.minimumSize.height, available.height))
         panel.maxSize = available.size
         let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
-                          height: max(panel.frame.height, panel.minSize.height))
+                          height: max(userPreferredHeight, PanelPlacement.preferredHeight(
+                            fileCount: model.queue.items.count, stagedCount: model.staged.count)))
         let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
+        lastPositionedHeight = panel.frame.height
     }
 
-    func windowDidResize(_ notification: Notification) { reanchorVisiblePanel() }
+    func windowDidResize(_ notification: Notification) {
+        guard !isPositioningPanel, panelRevealTimer == nil else { return }
+        if abs(panel.frame.height - lastPositionedHeight) > 0.5 {
+            userPreferredHeight = panel.frame.height
+        }
+        reanchorVisiblePanel()
+    }
 
     private func panelPlacementSmokeTest() -> Bool {
         guard let geometry = anchorGeometry() else {
@@ -272,6 +302,62 @@ final class DropPanel: NSPanel {
         var pasteCount = 0
         panel.onPaste = { pasteCount += 1 }
         return panel.performKeyEquivalent(with: event) && pasteCount == 1
+    }
+
+    private func inputPanelSizingSmokeTest() -> Bool {
+        let originalQueue = model.queue
+        let originalStaged = model.staged
+        let originalHeight = userPreferredHeight
+        let originalWidth = panel.frame.width
+        defer {
+            model.queue = originalQueue; model.staged = originalStaged
+            userPreferredHeight = originalHeight
+            panel.setContentSize(NSSize(width: originalWidth, height: originalHeight))
+            positionPanel()
+        }
+        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.08)) }
+        func expectedHeight() -> CGFloat {
+            guard let geometry = anchorGeometry() else { return 0 }
+            return min(PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame).height,
+                       max(userPreferredHeight, PanelPlacement.preferredHeight(fileCount: model.queue.items.count,
+                                                                               stagedCount: model.staged.count)))
+        }
+        func checkHeight(_ label: String) -> Bool {
+            let result = panel.frame.height == expectedHeight()
+            print("높이 검증 [\(label)]: 실제 \(panel.frame.height), 기대 \(expectedHeight()), 수동 \(userPreferredHeight)")
+            return result
+        }
+        let top = panel.frame.maxY
+        let urls = (1...4).map { URL(fileURLWithPath: "/tmp/heic-panel-size-\($0).heic") }
+        model.queue.add([urls[0]]); settle()
+        guard checkHeight("첫 파일"), panel.frame.maxY == top,
+              panel.frame.width == originalWidth else { return false }
+        model.queue.add(Array(urls.dropFirst())); settle()
+        guard checkHeight("여러 파일"), panelPlacementSmokeTest() else { return false }
+        panel.setContentSize(NSSize(width: originalWidth + 20, height: panel.frame.height)); settle()
+        guard userPreferredHeight == originalHeight else { return false }
+        panel.setContentSize(NSSize(width: originalWidth, height: panel.frame.height)); settle()
+        let height = panel.frame.height
+        model.queue.update(path: urls[0].path, status: .running); settle()
+        guard panel.frame.height == height else { return false }
+        model.queue = QueueState(); settle()
+        guard checkHeight("목록 비움") else { return false }
+        model.staged = urls; settle()
+        guard checkHeight("드롭 선택") else { return false }
+        model.queue.add(urls); model.staged = []; settle()
+        guard checkHeight("대기 이동") else { return false }
+        model.queue = QueueState(); settle()
+        panel.setContentSize(NSSize(width: originalWidth + 20, height: 730)); settle()
+        let manualHeight = panel.frame.height
+        print("수동 크기 검증: \(panel.frame)")
+        model.queue.add([urls[0]]); settle()
+        guard panel.frame.height == manualHeight, panel.frame.width == originalWidth + 20 else { return false }
+        hidePanel()
+        model.queue.add(Array(urls.dropFirst()))
+        showPanelForClipboard(animated: true)
+        model.queue.add([URL(fileURLWithPath: "/tmp/heic-panel-size-5.heic")])
+        settle(); RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        return panel.frame.height == expectedHeight() && panelPlacementSmokeTest()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { hidePanel(); return false }

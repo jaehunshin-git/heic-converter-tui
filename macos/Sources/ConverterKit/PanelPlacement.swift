@@ -8,6 +8,14 @@ public enum PanelPlacement {
     public static let edgeMargin: CGFloat = 8
     public static let anchorGap: CGFloat = 8
 
+    /// 처음 세 개의 썸네일을 위한 공간을 늘리고 긴 목록은 스크롤로 표시한다.
+    public static func preferredHeight(fileCount: Int, stagedCount: Int) -> CGFloat {
+        let rows = min(3, max(0, fileCount))
+        let listHeight: CGFloat = rows == 0 ? 0 : 100 + CGFloat(rows - 1) * 64
+        let selectionHeight: CGFloat = stagedCount > 0 ? 180 : 0
+        return min(800, defaultSize.height + listHeight + selectionHeight)
+    }
+
     public static func frame(anchor: CGRect, visibleFrame: CGRect, size: CGSize) -> CGRect {
         let bounds = availableFrame(anchor: anchor, visibleFrame: visibleFrame)
         let width = min(max(1, size.width), bounds.width)

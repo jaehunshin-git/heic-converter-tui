@@ -68,6 +68,10 @@ struct PanelView: View {
         .controlSize(.regular)
         .buttonStyle(PanelActionButtonStyle())
         .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
+        .onChange(of: model.queue.items.map(\.id)) { old, new in
+            let previous = Set(old)
+            presentation.revealFileID = new.last { !previous.contains($0) }
+        }
     }
 
     private var header: some View {
@@ -300,7 +304,7 @@ struct PanelView: View {
                                         in: RoundedRectangle(cornerRadius: 8))
                         Divider()
                     }
-                }
+                }.background(FileRevealMarker(fileID: presentation.revealFileID))
             }
         }.glassCard()
     }
@@ -410,6 +414,30 @@ struct PanelView: View {
 private struct SegmentChoice<Value: Hashable> {
     let value: Value
     let title: String
+}
+
+/// 새로 추가한 목록의 마지막 행이 보이도록 외부 스크롤을 이동한다.
+private struct FileRevealMarker: NSViewRepresentable {
+    var fileID: String?
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) {
+        guard let fileID else { context.coordinator.fileID = nil; return }
+        guard context.coordinator.fileID != fileID else { return }
+        context.coordinator.fileID = fileID
+        // 모델 갱신에 따른 패널 확장과 레이아웃을 반영한 뒤 위치를 확인한다.
+        let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                guard context.coordinator.fileID == fileID, view.window != nil,
+                      let scroll = view.enclosingScrollView, let document = scroll.documentView else { return }
+                scroll.window?.contentView?.layoutSubtreeIfNeeded()
+                let bottom = view.convert(view.bounds, to: document).maxY
+                document.scrollToVisible(NSRect(x: 0, y: max(0, bottom - 64), width: 1, height: 64))
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+    final class Coordinator { var fileID: String? }
 }
 
 /// 네이티브 선택·키보드 동작을 유지하면서 작은 글꼴을 명시한다.
@@ -526,6 +554,7 @@ private extension View {
     enum DropFeedback { case idle, loading, accepted, rejected }
     @Published var settingsExpanded = false
     @Published var selectedPaths: Set<String> = []
+    @Published var revealFileID: String?
     @Published var dropHovered = false
     @Published var dropFeedback: DropFeedback = .idle
     var latestDropID = UUID()
