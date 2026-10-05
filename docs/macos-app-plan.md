@@ -3,7 +3,7 @@
 - 연결 이슈: [#2 [feat] macOS 메뉴 막대 앱 및 DMG 배포 지원](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
 - 구현 브랜치: `feat/2-macos-menu-bar-app`
 - 작성일: 2026-10-04
-- 상태: 최초 구현과 사용 피드백 반영 후 작은 패널 UI 추가 반영 중(2026-10-05). 추가 검증 결과와 완료 기준은 [피드백 반영 계획](macos-feedback-plan.md)에서 추적하며 실제 게시와 main 머지는 수행하지 않는다.
+- 상태: 최초 구현과 사용 피드백 반영 후 작은 패널 UI 검증 완료(2026-10-05). 최신 완료 기준은 [간결한 패널 계획](macos-compact-ui-plan.md)에서 추적하며 실제 게시와 main 머지는 수행하지 않는다.
 - 검증 기록: [macOS 앱 검증 결과](macos-verification.md)
 
 ## 목적
