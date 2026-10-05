@@ -90,7 +90,8 @@ struct PanelView: View {
         .background(Color.accentColor.opacity(model.dropTargeted ? 0.18 : 0.06), in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(model.dropTargeted ? 0.8 : 0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
         .help("Photos 직접 드롭은 아직 지원하지 않습니다. Photos에서 수정되지 않은 HEIC 원본을 내보낸 뒤 Finder에서 드롭하세요.")
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $model.dropTargeted, perform: drop)
+        .onDrop(of: [UTType.fileURL.identifier] + NSFilePromiseReceiver.readableDraggedTypes,
+                isTargeted: $model.dropTargeted, perform: drop)
     }
 
     private var stagedFiles: some View {
@@ -232,7 +233,10 @@ struct PanelView: View {
 
     private func drop(_ providers: [NSItemProvider]) -> Bool {
         let supported = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
-        guard !supported.isEmpty else { return false }
+        guard !supported.isEmpty else {
+            model.message = "Photos 직접 드롭은 아직 지원하지 않습니다. HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
+            return false
+        }
         Task { @MainActor in
             var urls: [URL] = []
             for provider in supported {
@@ -245,7 +249,11 @@ struct PanelView: View {
                 }
                 if let url { urls.append(url) }
             }
-            model.stage(urls)
+            if urls.isEmpty {
+                model.message = "파일 URL을 읽지 못했습니다. Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
+            } else {
+                model.stage(urls)
+            }
         }
         return true
     }
