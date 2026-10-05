@@ -237,7 +237,7 @@ PNG3 CICP의 PQ 전달 함수를 검사하며 SDR sRGB 출력은 HDR 검증 성�
 있으므로 함께 생성한 각 체크섬을 사용한다.
 
 ```text
-e57c9b033ffb705793d5b5ccf4cc370f8185a314e257f24da7bc6f82b861adf7
+de9fbff292076bad4eb554ad1b94daf94ec4ae9bbb9a1a2cc9652172ca0f3098
 ```
 
 GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작업에서 수행하지
@@ -329,3 +329,18 @@ GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작
 - Xcode MCP 빌드 및 XCTest 26개 통과. 최신 앱·DMG 패키징의 입력·설정·패널
   smoke, 합성 SDR/HDR worker 변환, arm64·로더·ad-hoc 서명·체크섬과 설치
   복사본 실행 검증을 통과했다.
+
+
+## 펼친 변환 설정의 선택 버튼 글꼴 축소 (2026-10-05)
+
+- 기존 배포 앱과 Xcode에서 실행 중이던 앱을 종료한 뒤 수정했다.
+- 펼친 형식·JPEG 품질·PNG 압축 Picker를 기존 CompactSegments로 통일했다.
+  접힌 형식 선택과 같은 11pt medium 글꼴을 명시하며 선택 영역 높이는 26pt다.
+- 별도 설정 저장소의 같은 PanelView에서 기본 420pt·최소 380pt 너비별
+  JPEG·PNG의 선택 컨트롤 두 개, 11pt 글꼴과 카드 너비 내 표시를 확인했다.
+  각 프리셋의 네이티브 action을 실행해 JPEG 품질 60/80/90/100과 PNG 압축
+  9/6/3/0이 설정에 반영되는 것을 확인했다.
+- Computer Use로 최소 너비의 펼친 PNG·JPEG 화면에서 글자 크기와 잘림 없음을
+  확인했다. 작게 클릭 시 압축 9 표시와 JPEG 전환 시 품질 선택 표시도 확인했다.
+- Xcode MCP 빌드·XCTest 26개와 최신 앱·DMG 패키징 검증을 통과했다.
+  합성 SDR/HDR worker 변환, arm64·로더·서명·체크섬 및 설치 복사본 검증 포함.
