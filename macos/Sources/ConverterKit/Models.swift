@@ -11,6 +11,10 @@ public struct ConversionOptions: Codable, Equatable {
         get { QualityPreset.nearest(to: jpegQuality) }
         set { jpegQuality = newValue.jpegQuality }
     }
+    public var pngCompressionPreset: PNGCompressionPreset {
+        get { PNGCompressionPreset.nearest(to: pngCompression) }
+        set { pngCompression = newValue.compressionLevel }
+    }
     public init() {}
     enum CodingKeys: String, CodingKey {
         case outputFormat = "output_format", jpegQuality = "jpeg_quality"
@@ -22,11 +26,27 @@ public struct AppSettings: Codable, Equatable {
     public var options = ConversionOptions()
     public var clipboardEnabled = true
     public var outputDirectory = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Downloads/HEIC Converter").path
+        .appendingPathComponent("Pictures/HEIC Converter").path
+    public var displayOutputDirectory: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if outputDirectory == home { return "~" }
+        if outputDirectory.hasPrefix(home + "/") {
+            return "~" + outputDirectory.dropFirst(home.count)
+        }
+        return outputDirectory
+    }
     public init() {}
     public static func load(from defaults: UserDefaults = .standard) -> AppSettings {
         guard let data = defaults.data(forKey: "converter.settings"),
-              let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+              var value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+        let validationDirectories = [
+            "/private/tmp/heic-converter-ui-check/converted",
+            "/tmp/heic-converter-ui-check/converted",
+        ]
+        if validationDirectories.contains(value.outputDirectory) {
+            value.outputDirectory = Self().outputDirectory
+            value.save(to: defaults)
+        }
         return value
     }
     public func save(to defaults: UserDefaults = .standard) {
