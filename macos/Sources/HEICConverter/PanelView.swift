@@ -11,12 +11,13 @@ struct PanelView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var closeFocused: Bool
+    @FocusState private var dropFocused: Bool
     @StateObject private var presentation = PanelPresentationState()
-    private var dropHighlighted: Bool { model.dropTargeted || presentation.dropHovered }
+    private var dropHighlighted: Bool { model.dropTargeted || presentation.dropHovered || dropFocused }
     private var dropTitle: String {
         if model.dropTargeted { return "여기에 놓아서 파일 선택" }
         switch presentation.dropFeedback {
-        case .idle: return "HEIC 파일을 여기에 놓으세요"
+        case .idle: return "파일을 놓거나 클릭해 붙여넣기"
         case .loading: return "파일을 확인하고 있습니다"
         case .accepted: return "HEIC 파일을 선택했습니다"
         case .rejected: return "추가할 수 없는 파일입니다"
@@ -90,26 +91,33 @@ struct PanelView: View {
     }
 
     private var dropZone: some View {
-        VStack(spacing: 6) {
-            if presentation.dropFeedback == .loading {
-                ProgressView().controlSize(.small).frame(height: 22)
-            } else {
-                Image(systemName: model.dropTargeted ? "arrow.down.circle.fill"
-                      : presentation.dropFeedback == .accepted ? "checkmark.circle"
-                      : presentation.dropFeedback == .rejected ? "exclamationmark.circle" : "arrow.down.doc")
-                    .font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+        Button(action: model.paste) {
+            VStack(spacing: 6) {
+                if presentation.dropFeedback == .loading {
+                    ProgressView().controlSize(.small).frame(height: 22)
+                } else {
+                    Image(systemName: model.dropTargeted ? "arrow.down.circle.fill"
+                          : presentation.dropFeedback == .accepted ? "checkmark.circle"
+                          : presentation.dropFeedback == .rejected ? "exclamationmark.circle" : "arrow.down.doc")
+                        .font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+                }
+                Text(dropTitle).font(.headline).foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                Text("Finder에서 HEIC 파일을 복사한 뒤 클릭하세요")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
-            Text(dropTitle).font(.headline)
-            Text("드래그 앤 드롭 · Finder에서 파일을 끌어놓으세요")
-                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Button("붙여넣기", action: model.paste).font(.caption.weight(.medium))
-                .buttonStyle(PanelActionButtonStyle(compact: true)).keyboardShortcut("v", modifiers: .command)
+            .frame(maxWidth: .infinity, minHeight: 100).padding(12)
+            .background(Color.accentColor.opacity(model.dropTargeted ? 0.2 : dropHighlighted ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(dropHighlighted ? 0.85 : 0.35),
+                        style: StrokeStyle(lineWidth: model.dropTargeted ? 2 : dropFocused ? 1.5 : presentation.dropHovered ? 1.5 : 1,
+                                           dash: model.dropTargeted || dropFocused ? [] : [5, 4])))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
-        .frame(maxWidth: .infinity).padding(12)
-        .background(Color.accentColor.opacity(model.dropTargeted ? 0.2 : presentation.dropHovered ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(dropHighlighted ? 0.85 : 0.35),
-                    style: StrokeStyle(lineWidth: model.dropTargeted ? 2 : presentation.dropHovered ? 1.5 : 1, dash: model.dropTargeted ? [] : [5, 4])))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
+        .keyboardShortcut("v", modifiers: .command)
+        .focused($dropFocused).focusEffectDisabled()
+        .accessibilityLabel("HEIC 파일 붙여넣기")
+        .accessibilityHint("Finder에서 복사한 HEIC 파일을 대기 목록에 추가합니다. 파일을 끌어놓을 수도 있습니다.")
         .onHover { presentation.dropHovered = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: dropHighlighted)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: model.dropTargeted)
