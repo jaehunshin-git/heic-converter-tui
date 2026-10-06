@@ -1,11 +1,16 @@
 # macOS 앱 검증 결과
 
 - 연결 이슈: [#2](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
-- 검증일: 2026-10-05
+- 최초 검증일: 2026-10-05 (아래 항목은 개선 단계별 기록)
 - 기능 버전: 앱·wheel·sdist 0.3.0
-- CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37259227317)
-- CI 검증 커밋: `447e6a3f8909bee801399bada217c0317124d6fb`
+- 초기 CI: [macOS 15·26 Apple Silicon 검증 성공](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37259227317)
+- 초기 CI 검증 커밋: `447e6a3f8909bee801399bada217c0317124d6fb`
 - 로컬: macOS 27.2, arm64, 앱 빌드 Python 3.12.12
+
+현재 UI 기준은 기본 420×520pt, 최소 380×520pt와 입력·설정 상태에 따른 자동 높이다.
+앞의 큰 패널 크기와 펼친 설정 복원 기록은 당시 검증이며, 최신 기준은 문서 하단의
+목록 간격 조정과 PR 검토 보완 기록을 따른다. 최신 커밋의 CI는
+[PR #3 검사](https://github.com/jaehunshin-git/heic-converter-tui/pull/3/checks)에서 확인한다.
 
 ## 기능과 근거
 
@@ -453,3 +458,37 @@ GitHub Releases/PyPI 게시, v0.3.0 태그 생성, main 머지는 이 구현 작
 - Xcode MCP 빌드와 XCTest 30개, 입력·설정·패널 smoke, 합성 SDR/HDR worker
   변환, 앱·DMG의 arm64·로더·서명·체크섬·설치 복사본 검증 통과. 펼친 상태의
   형식 전환도 기존 높이 smoke에서 확인한다. 확인 후 앱을 모두 종료했다.
+
+## PR #3 검토 보완 검증 (2026-10-06)
+
+- 출력 부모 폴더가 일반 파일로 교체된 경우를 네 충돌 정책에서 검사했다.
+  이름 변경을 반복하지 않고 `output_unavailable` 실패와 완료 이벤트를 전달한다.
+  실제 worker에 취소와 EOF를 보내도 정상 종료하며 기존 파일은 그대로 유지된다.
+- 손상된 입력 뒤 같은 이름 정상 입력을 네 정책에서 검사했다. 실패한 변환의 이름
+  예약을 해제해 정상 파일이 원래 이름으로 저장된다. 끊어진 출력 심볼릭 링크는
+  점유된 경로로 판정하고 링크·기존 결과를 보존하는 충돌 정책을 적용한다.
+- 단일 작업 오류와 worker 세션 장애를 구분한다. Swift 회귀와 실제 번들 worker
+  smoke에서 저장 경로·옵션의 준비 오류가 연속 발생해도 다음 PNG 예약을 기존
+  압축·메타데이터·저장 폴더로 실행했다. 준비 중 취소는 `prepared` 뒤 전송하여
+  늦은 `unknown_job` 응답이 다음 작업에 영향을 주지 않게 했다.
+- 준비 단계의 거절도 최종 실패에 포함한다. 전체 거절, 정상·손상·거절 혼합,
+  준비 중 취소와 다음 작업의 집계 초기화를 실제 AppModel·worker로 확인했다.
+  합성 HEIC, 별도 UserDefaults와 이름 있는 pasteboard만 사용했다.
+- 영문 배포 설명은 UTF-8 원문으로 검사한다. 한국어 설명, 링크·코드·UI 인용을
+  이용한 우회, 분리된 한글 자모, 인코딩된 Summary와 잘못된 UTF-8을 거절한다.
+  실제 영문 README의 정확한 UI 인용은 허용하며 두 README의 빌드 링크는
+  sdist에도 접근 가능한 절대 GitHub 문서 링크로 바꿨다.
+- 실제 코덱 libheif 1.20.2·libde265 1.0.16·x265 4.1+1-1d117be를 공식 소스와
+  대조해 고지를 보정했다. wheel 버전·코덱 구성·고지 형식 변경 시 빌드를 중단하는
+  회귀를 추가했고 새 앱에 보정된 고지를 포함했다.
+- Python **122개**, Ruff, Xcode MCP 빌드와 XCTest **32개**가 통과했다.
+  wheel·sdist를 다시 빌드하여 버전 0.3.0·허용 목록·영문 본문을 검사했다.
+  새 worker를 포함한 앱·DMG의 합성 SDR/HDR, 입력·설정·패널·작업 복구 smoke,
+  Mach-O 44개 arm64·로더·ad-hoc 서명과 설치 복사본 실행·SHA-256을 검증했다.
+- 최초 통합 smoke에서 메뉴 항목 수 변경 뒤 배치 검사가 먼저 실행되는 경합을
+  확인했다. 실제 배치를 강제하거나 검사를 생략하지 않고, 높이와 아이콘 기준
+  위치가 두 번 연속 안정될 때까지 최대 1초 기다린 뒤 동일 조건을 검사한다.
+  수정 후 앱과 DMG 설치 복사본의 전체 검증이 통과했다.
+- 최신 커밋의 macOS 15·26 CI와 머지 조건은
+  [PR #3 검사](https://github.com/jaehunshin-git/heic-converter-tui/pull/3/checks)를
+  기준으로 한다. 실제 main 머지, 버전 태그와 릴리스/PyPI 게시는 별도 실행이다.

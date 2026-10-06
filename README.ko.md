@@ -86,7 +86,7 @@ heic-converter/
 첫 지원 범위에 포함하지 않습니다. 릴리스 앱은
 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)에서
 DMG와 SHA-256 체크섬으로 배포합니다. 아직 릴리스되지 않은 소스 체크아웃은
-[빌드 안내](docs/macos-build-release.md)에 따라 앱을 만들 수 있습니다.
+[빌드 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)에 따라 앱을 만들 수 있습니다.
 
 1. 다운로드한 DMG의 SHA-256 체크섬을 확인합니다.
 2. DMG를 열고 **HEIC Converter.app**을 **Applications**로 옮깁니다.

@@ -82,7 +82,7 @@ The app targets **Apple Silicon arm64, macOS 15+**. Intel and Universal2 builds
 are outside the initial scope. A released app is distributed as a DMG with a
 SHA-256 checksum through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
 For a checkout awaiting release, build the app with the
-[build instructions](docs/macos-build-release.md).
+[build instructions](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md).
 
 1. Verify the downloaded DMG against its SHA-256 checksum.
 2. Open the DMG and drag **HEIC Converter.app** to **Applications**.
