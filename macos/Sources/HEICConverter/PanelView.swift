@@ -69,6 +69,14 @@ struct PanelView: View {
         .controlSize(.regular)
         .buttonStyle(PanelActionButtonStyle())
         .disabled(model.terminating)
+        .task(id: presentation.conversionFeedback?.id) {
+            guard let feedback = presentation.conversionFeedback else { return }
+            do { try await Task.sleep(for: .milliseconds(1500)) } catch { return }
+            if presentation.conversionFeedback?.id == feedback.id {
+                presentation.conversionFeedback = nil
+            }
+        }
+        .onDisappear { presentation.conversionFeedback = nil }
         .onChange(of: presentation.settingsExpanded) { _, expanded in onSettingsExpansionChanged(expanded) }
         .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
         .onChange(of: model.queue.items.map(\.id)) { old, new in
@@ -160,8 +168,9 @@ struct PanelView: View {
                 Spacer()
                 Button("대기 목록에 추가") { model.acceptStaged(convert: false) }
                 Button(model.selectedDestination == .files ? "지금 저장" : "지금 복사") {
+                    presentation.conversionFeedback = .init(destination: model.selectedDestination)
                     model.acceptStaged(convert: true)
-                }.buttonStyle(PanelActionButtonStyle(tone: .success))
+                }.buttonStyle(PanelActionButtonStyle(tone: .conversion))
             }
         }.glassCard()
     }
@@ -358,13 +367,17 @@ struct PanelView: View {
     }
 
     private func conversionButton(_ destination: ConversionDestination, title: String, icon: String) -> some View {
-        Button { model.startWaiting(destination: destination, includingStaged: true) } label: {
-            Label(title, systemImage: icon).font(.system(size: 13, weight: .semibold))
+        let acknowledged = presentation.conversionFeedback?.destination == destination
+        return Button {
+            presentation.conversionFeedback = .init(destination: destination)
+            model.startWaiting(destination: destination, includingStaged: true)
+        } label: {
+            Label(title, systemImage: acknowledged ? "checkmark" : icon).font(.system(size: 13, weight: .semibold))
                 .frame(maxWidth: .infinity, minHeight: 24)
         }
-        .buttonStyle(PanelActionButtonStyle(tone: model.selectedDestination == destination ? .success : .conversion))
+        .buttonStyle(PanelActionButtonStyle(tone: acknowledged ? .success : .conversion))
         .accessibilityLabel(destination == .files ? "파일 변환 후 저장" : "파일 변환 후 클립보드 복사")
-        .accessibilityValue(model.selectedDestination == destination ? "선택됨" : "선택 안 됨")
+        .accessibilityValue(acknowledged ? "실행 요청됨" : (model.selectedDestination == destination ? "선택됨" : "선택 안 됨"))
         .help(destination == .files ? "설정한 저장 폴더에 변환 파일을 저장합니다."
               : "변환한 이미지를 클립보드에 복사합니다. 문서나 메신저에 붙여넣을 수 있으며 결과 파일은 남기지 않습니다.")
     }
@@ -575,6 +588,11 @@ private extension View {
 
 @MainActor private final class PanelPresentationState: ObservableObject {
     enum DropFeedback { case idle, loading, accepted, rejected }
+    struct ConversionFeedback {
+        let id = UUID()
+        let destination: ConversionDestination
+    }
+    @Published var conversionFeedback: ConversionFeedback?
     @Published var settingsExpanded = false
     @Published var selectedPaths: Set<String> = []
     @Published var revealFileID: String?
@@ -612,14 +630,16 @@ private struct PanelActionButtonBody: View {
         case .accent: return .accentColor
         case .detection: return .blue
         case .destructive: return Color(red: 0.82, green: 0.12, blue: 0.18)
-        case .conversion, .success: return .green
+        case .conversion: return .blue
+        case .success: return .green
         case .neutral: return .primary
         }
     }
-    private var filled: Bool { tone == .accent || tone == .destructive || tone == .success }
+    private var filled: Bool { tone == .accent || tone == .destructive || tone == .conversion || tone == .success }
+    private var showsFilledBackground: Bool { filled && (enabled || tone == .success) }
     private var usesDarkFilledForeground: Bool {
-        guard tone == .accent || tone == .success,
-              let color = (tone == .success ? NSColor.systemGreen : NSColor.controlAccentColor).usingColorSpace(.sRGB) else { return false }
+        guard tone == .accent || tone == .conversion || tone == .success,
+              let color = (tone == .success ? NSColor.systemGreen : tone == .conversion ? NSColor.systemBlue : NSColor.controlAccentColor).usingColorSpace(.sRGB) else { return false }
         func linear(_ value: CGFloat) -> CGFloat {
             value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
@@ -630,11 +650,11 @@ private struct PanelActionButtonBody: View {
     private var filledForeground: Color { usesDarkFilledForeground ? .black : .white }
     var body: some View {
         configuration.label
-            .foregroundStyle(enabled ? (filled ? filledForeground : tint) : (tone == .success ? tint : Color.secondary))
+            .foregroundStyle(showsFilledBackground ? filledForeground : enabled ? tint : Color.secondary)
             .padding(.horizontal, compact ? 8 : 10).padding(.vertical, compact ? 5 : 9)
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(enabled && filled ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : (tone == .success ? 0.18 : 0.06)))
+                    .fill(showsFilledBackground ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : 0.06))
                     .overlay {
                         if enabled && filled {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
