@@ -11,9 +11,9 @@ public struct WorkerRequest: Encodable {
         case protocolVersion = "protocol_version", jobID = "job_id", command, files
         case outputDirectory = "output_directory", options
     }
-    public init(command: String, job: ConversionJob) {
+    public init(command: String, job: ConversionJob, outputDirectory: String? = nil) {
         self.command = command; jobID = job.id
-        if command == "prepare" { files = job.files; outputDirectory = job.outputDirectory; options = job.options }
+        if command == "prepare" { files = job.files; self.outputDirectory = outputDirectory ?? job.outputDirectory; options = job.options }
     }
     public func line() throws -> Data { var data = try JSONEncoder().encode(self); data.append(10); return data }
 }

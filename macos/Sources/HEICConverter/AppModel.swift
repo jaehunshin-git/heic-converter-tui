@@ -12,7 +12,13 @@ import UniformTypeIdentifiers
     @Published var message = "HEIC 파일을 드롭하거나 클릭해 선택하세요."
     @Published var clipboardMessage: String?
     @Published var cancelling = false
+    @Published var selectedDestination: ConversionDestination = .files
+    @Published private(set) var terminating = false
     private let worker = WorkerClient()
+    private let clipboardResults: ClipboardResultStore
+    private var clipboardChangeCounts: [String: Int] = [:]
+    private var convertedClipboardFiles: [String: URL] = [:]
+    private var cancellationJobIDs: [String] = []
     private var timer: Timer?
     private let pasteboard: NSPasteboard
     private let settingsStore: UserDefaults
@@ -25,13 +31,21 @@ import UniformTypeIdentifiers
     var waitingCount: Int { queue.waitingCount }
     var active: Bool { queue.activeJob != nil }
 
-    init(startClipboard: Bool = true, pasteboard: NSPasteboard = .general, defaults: UserDefaults = .standard) {
+    init(startClipboard: Bool = true, pasteboard: NSPasteboard = .general, defaults: UserDefaults = .standard,
+         clipboardRoot: URL? = nil) {
         self.pasteboard = pasteboard; self.settingsStore = defaults
+        self.clipboardResults = ClipboardResultStore(pasteboard: pasteboard, root: clipboardRoot)
         self.settings = AppSettings.load(from: defaults)
         self.gate = ClipboardGate(changeCount: pasteboard.changeCount)
         worker.onEvent = { [weak self] event in self?.receive(event) }
         worker.onFailure = { [weak self] error in
             guard let self else { return }
+            if let job = self.queue.activeJob, job.destination == .clipboard {
+                self.worker.stop(afterExit: { [clipboardResults = self.clipboardResults] in
+                    clipboardResults.discard(jobID: job.id)
+                })
+            }
+            self.convertedClipboardFiles.removeAll(); self.clipboardChangeCounts.removeAll()
             self.awaitingPreparation = false; self.preparationRejectedCount = 0
             self.queue.failActive(error); self.cancelling = false; self.message = error
         }
@@ -95,7 +109,7 @@ import UniformTypeIdentifiers
     func acceptStaged(convert: Bool) {
         let paths = staged.map(\.path)
         queue.add(staged); staged.removeAll()
-        if convert { schedule(paths) }
+        if convert { schedule(paths, destination: selectedDestination) }
     }
     func remove(_ path: String) {
         // 표시 중인 항목의 ID는 파일 경로가 나중에 교체되어도 바뀌지 않는다.
@@ -127,33 +141,75 @@ import UniformTypeIdentifiers
         }
         notices = rejections
     }
-    func startWaiting() { schedule(queue.items.filter { $0.status == .waiting }.map(\.id)) }
-    func retryFailures() { schedule(queue.items.filter { $0.status == .failed }.map(\.id)) }
-    func retry(_ path: String) { schedule([path]) }
-    private func schedule(_ paths: [String]) {
-        queue.schedule(paths: paths, settings: settings)
+    func startWaiting() { startWaiting(destination: selectedDestination) }
+    func startWaiting(destination: ConversionDestination, includingStaged: Bool = false) {
+        selectedDestination = destination
+        if includingStaged { acceptStaged(convert: false) }
+        schedule(queue.items.filter { $0.status == .waiting }.map(\.id), destination: destination)
+    }
+    func retryFailures() {
+        // 재시도는 실패 항목이 요청했던 저장·복사 방식을 유지한다.
+        for destination in [ConversionDestination.files, .clipboard] {
+            schedule(queue.items.filter { $0.status == .failed && $0.conversionDestination == destination }.map(\.id),
+                     destination: destination)
+        }
+    }
+    func retry(_ path: String) {
+        guard let item = queue.items.first(where: { $0.id == path }) else { return }
+        schedule([path], destination: item.conversionDestination)
+    }
+    private func schedule(_ paths: [String], destination: ConversionDestination) {
+        let previousJobs = Set(queue.jobs.map(\.id))
+        queue.schedule(paths: paths, settings: settings, destination: destination)
+        for job in queue.jobs where !previousJobs.contains(job.id) && job.destination == .clipboard {
+            clipboardChangeCounts[job.id] = pasteboard.changeCount
+        }
         startNext()
     }
     private func startNext() {
+        guard !terminating else { return }
         guard let job = queue.next() else { return }
         cancelling = false
         awaitingPreparation = true; preparationRejectedCount = 0
+        convertedClipboardFiles.removeAll()
+        var outputDirectory: String?
+        if job.destination == .clipboard {
+            do { outputDirectory = try clipboardResults.prepareDirectory(jobID: job.id).path }
+            catch {
+                clipboardChangeCounts.removeValue(forKey: job.id)
+                queue.failCurrentJob(error.localizedDescription)
+                awaitingPreparation = false; message = error.localizedDescription
+                startNext(); return
+            }
+        }
         do {
             try worker.start()
-            try worker.send(WorkerRequest(command: "prepare", job: job))
-            message = "저장 위치와 \(job.files.count)개 파일을 확인하고 있습니다."
+            var request = WorkerRequest(command: "prepare", job: job, outputDirectory: outputDirectory)
+            // 이미지 복사는 파일 이름과 무관하다. 임시 결과끼리 겹쳐도 모두 변환한다.
+            if job.destination == .clipboard { request.options?.onConflict = "rename" }
+            try worker.send(request)
+            message = job.destination == .clipboard ? "복사할 \(job.files.count)개 파일을 확인하고 있습니다."
+                : "저장 위치와 \(job.files.count)개 파일을 확인하고 있습니다."
         } catch { worker.fail(error.localizedDescription) }
     }
     func cancel() {
         guard let job = queue.activeJob, !cancelling else { return }
         do {
             // 준비 실패 후의 unknown_job 응답이 다음 예약에 섞이지 않도록 prepared까지 기다린다.
-            if !awaitingPreparation { try worker.send(WorkerRequest(command: "cancel", job: job)) }
+            if !awaitingPreparation {
+                try worker.send(WorkerRequest(command: "cancel", job: job))
+                rememberCancellation(job.id)
+            }
             cancelling = true; message = "현재 파일 저장 후 취소합니다."
         }
         catch { worker.fail(error.localizedDescription) }
     }
     private func receive(_ event: WorkerEvent) {
+        // 마지막 파일 완료와 취소 전송이 교차하면 이전 작업의 unknown_job이 뒤늦게 올 수 있다.
+        if event.event == "error", event.errorCode == "unknown_job",
+           event.jobID != queue.activeJob?.id, cancellationJobIDs.contains(event.jobID) {
+            cancellationJobIDs.removeAll { $0 == event.jobID }; return
+        }
         guard let job = queue.activeJob else { return }
         guard job.id == event.jobID else { worker.fail("worker 응답의 작업 ID가 일치하지 않습니다."); return }
         switch event.event {
@@ -162,7 +218,10 @@ import UniformTypeIdentifiers
             // worker의 최종 집계는 수락한 입력만 세므로 준비 단계의 거절도 표시 집계에 포함한다.
             preparationRejectedCount = Set((event.rejected ?? []).map(\.source)).count
             for rejection in event.rejected ?? [] { queue.update(path: rejection.source, status: .failed, detail: rejection.reason) }
-            do { try worker.send(WorkerRequest(command: cancelling ? "cancel" : "run", job: job)) }
+            do {
+                try worker.send(WorkerRequest(command: cancelling ? "cancel" : "run", job: job))
+                if cancelling { rememberCancellation(job.id) }
+            }
             catch { worker.fail(error.localizedDescription) }
         case "file_started":
             if let path = event.source { queue.update(path: path, status: .running) }
@@ -172,13 +231,24 @@ import UniformTypeIdentifiers
             let status: FileStatus = event.event == "file_succeeded" ? .succeeded : event.event == "file_skipped" ? .skipped : .failed
             var detail = event.error.map { "\(event.errorCode ?? "conversion_error"): \($0)" }
             if status == .failed, ["output_permission", "output_unavailable"].contains(event.errorCode ?? "") {
-                detail = (detail ?? "저장 실패") + " 저장 위치를 변경한 뒤 실패 파일을 재시도하세요."
+                detail = (detail ?? "저장 실패") + (job.destination == .files
+                    ? " 저장 위치를 변경한 뒤 실패 파일을 재시도하세요."
+                    : " 임시 변환 위치에 접근할 수 없습니다. 재시도하거나 앱을 다시 실행하세요.")
             }
             if status == .succeeded { detail = event.hdrApplied == true ? "HDR 적용" : event.sdrReason }
             if status == .skipped { detail = "동일한 이름의 결과가 있어 건너뛰었습니다." }
-            queue.update(path: path, status: status, detail: detail, destination: event.destination)
+            if job.destination == .clipboard, status == .succeeded, let destination = event.destination {
+                convertedClipboardFiles[path] = URL(fileURLWithPath: destination)
+                // 클립보드 게시가 끝날 때까지 잠금을 유지하고 임시 결과 열기는 제공하지 않는다.
+                queue.update(path: path, status: .running, detail: "변환 완료 · 복사 대기")
+            } else {
+                queue.update(path: path, status: status, detail: detail, destination: event.destination)
+            }
         case "completed", "cancelled":
-            message = "\(event.event == "cancelled" ? "취소" : "완료"): 성공 \(event.succeeded ?? 0), 건너뜀 \(event.skipped ?? 0), 실패 \((event.failed ?? 0) + preparationRejectedCount)"
+            if job.destination == .clipboard { finishClipboardJob(job, event: event) }
+            else {
+                message = "\(event.event == "cancelled" ? "취소" : "완료"): 성공 \(event.succeeded ?? 0), 건너뜀 \(event.skipped ?? 0), 실패 \((event.failed ?? 0) + preparationRejectedCount)"
+            }
             preparationRejectedCount = 0; awaitingPreparation = false
             queue.finish(); cancelling = false; startNext()
         case "error":
@@ -187,11 +257,52 @@ import UniformTypeIdentifiers
             let jobError = (awaitingPreparation && event.errorCode == "invalid_request")
                 || event.errorCode == "worker_failed"
             guard jobError else { worker.fail(error); return }
+            if job.destination == .clipboard {
+                clipboardResults.discard(jobID: job.id)
+                clipboardChangeCounts.removeValue(forKey: job.id); convertedClipboardFiles.removeAll()
+            }
             queue.failCurrentJob(error); cancelling = false
             preparationRejectedCount = 0; awaitingPreparation = false
-            message = error + " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
+            message = error + (job.destination == .files
+                ? " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
+                : " 변환 옵션 또는 임시 변환 위치를 확인한 뒤 재시도하세요.")
             startNext()
         default: break
+        }
+    }
+    private func rememberCancellation(_ id: String) {
+        cancellationJobIDs.append(id)
+        if cancellationJobIDs.count > 32 { cancellationJobIDs.removeFirst() }
+    }
+    private func finishClipboardJob(_ job: ConversionJob, event: WorkerEvent) {
+        defer {
+            clipboardChangeCounts.removeValue(forKey: job.id)
+            convertedClipboardFiles.removeAll()
+        }
+        let failed = (event.failed ?? 0) + preparationRejectedCount
+        let cancelled = cancelling || event.event == "cancelled"
+        guard !cancelled, !convertedClipboardFiles.isEmpty else {
+            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .waiting, detail: "복사를 취소했습니다.") }
+            clipboardResults.discard(jobID: job.id)
+            message = cancelled ? "복사 취소: 기존 클립보드를 유지했습니다."
+                : "복사할 변환 결과가 없습니다. 실패 \(failed) · 기존 클립보드를 유지했습니다."
+            return
+        }
+        do {
+            guard let expectedCount = clipboardChangeCounts[job.id] else { throw WorkerFailure.invalidEvent }
+            let urls = job.files.compactMap { convertedClipboardFiles[$0] }
+            let publishedCount = try clipboardResults.publish(jobID: job.id, urls: urls, expectedChangeCount: expectedCount)
+            // 앱 자신의 복사는 다음 예약의 기준만 갱신하고 외부 변경은 갱신하지 않는다.
+            for id in clipboardChangeCounts.keys where clipboardChangeCounts[id] == expectedCount {
+                clipboardChangeCounts[id] = publishedCount
+            }
+            gate.resume(changeCount: publishedCount)
+            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .succeeded, detail: "클립보드에 복사됨") }
+            message = "이미지 복사 완료: \(urls.count)개 · 실패 \(failed). 문서나 메신저에 붙여넣으세요."
+        } catch {
+            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .failed, detail: error.localizedDescription) }
+            clipboardResults.discard(jobID: job.id)
+            message = "복사 실패: \(error.localizedDescription)"
         }
     }
     func chooseOutput() {
@@ -202,8 +313,15 @@ import UniformTypeIdentifiers
     }
     func openOutput() { NSWorkspace.shared.open(URL(fileURLWithPath: settings.outputDirectory)) }
     func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-    func shutdown() {
-        timer?.invalidate(); timer = nil; worker.stop()
+    func shutdown(completion: (() -> Void)? = nil) {
+        terminating = true
+        timer?.invalidate(); timer = nil
+        let jobID = queue.activeJob.flatMap { $0.destination == .clipboard ? $0.id : nil }
+        worker.stop(afterExit: { [clipboardResults] in
+            if let jobID { clipboardResults.discard(jobID: jobID) }
+            clipboardResults.shutdown()
+            completion?()
+        })
         FileThumbnailStore.shared.removeAllCachedThumbnails()
     }
 }

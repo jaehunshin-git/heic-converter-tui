@@ -68,6 +68,7 @@ struct PanelView: View {
         }
         .controlSize(.regular)
         .buttonStyle(PanelActionButtonStyle())
+        .disabled(model.terminating)
         .onChange(of: presentation.settingsExpanded) { _, expanded in onSettingsExpansionChanged(expanded) }
         .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
         .onChange(of: model.queue.items.map(\.id)) { old, new in
@@ -158,7 +159,9 @@ struct PanelView: View {
                 Button("취소", action: model.cancelStaged)
                 Spacer()
                 Button("대기 목록에 추가") { model.acceptStaged(convert: false) }
-                Button("지금 변환") { model.acceptStaged(convert: true) }.buttonStyle(PanelActionButtonStyle(tone: .accent))
+                Button(model.selectedDestination == .files ? "지금 저장" : "지금 복사") {
+                    model.acceptStaged(convert: true)
+                }.buttonStyle(PanelActionButtonStyle(tone: .success))
             }
         }.glassCard()
     }
@@ -322,7 +325,7 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(model.message).font(.caption).foregroundStyle(.primary).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if model.active {
@@ -331,12 +334,13 @@ struct PanelView: View {
                     Button(model.cancelling ? "취소 대기 중" : "현재 파일 완료 후 취소", action: model.cancel).disabled(model.cancelling)
                 }
             }
-            Button(action: model.startWaiting) {
-                Label(model.active ? "대기 파일 변환 예약" : "대기 목록 변환 시작", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 24)
+            HStack(spacing: 8) {
+                conversionButton(.files, title: model.active ? "변환·저장 예약" : "변환 후 저장", icon: "arrow.down.to.line")
+                conversionButton(.clipboard, title: model.active ? "변환·복사 예약" : "변환 후 복사", icon: "doc.on.clipboard")
             }
-            .buttonStyle(PanelActionButtonStyle(tone: .accent))
-            .disabled(!model.queue.items.contains { $0.status == .waiting })
+            .disabled(model.staged.isEmpty && !model.queue.items.contains { $0.status == .waiting })
+            Text(model.selectedDestination == .files ? "저장: 선택한 폴더에 변환 파일을 저장합니다." : "복사: 이미지로 붙여넣으며 파일은 남기지 않습니다.")
+                .font(.caption2).foregroundStyle(.secondary)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     clipboardButton
@@ -351,6 +355,18 @@ struct PanelView: View {
             }
             if let status = model.clipboardMessage { Text(status).font(.caption).foregroundStyle(.primary) }
         }
+    }
+
+    private func conversionButton(_ destination: ConversionDestination, title: String, icon: String) -> some View {
+        Button { model.startWaiting(destination: destination, includingStaged: true) } label: {
+            Label(title, systemImage: icon).font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 24)
+        }
+        .buttonStyle(PanelActionButtonStyle(tone: model.selectedDestination == destination ? .success : .conversion))
+        .accessibilityLabel(destination == .files ? "파일 변환 후 저장" : "파일 변환 후 클립보드 복사")
+        .accessibilityValue(model.selectedDestination == destination ? "선택됨" : "선택 안 됨")
+        .help(destination == .files ? "설정한 저장 폴더에 변환 파일을 저장합니다."
+              : "변환한 이미지를 클립보드에 복사합니다. 문서나 메신저에 붙여넣을 수 있으며 결과 파일은 남기지 않습니다.")
     }
 
     private var clipboardButton: some View {
@@ -573,7 +589,7 @@ private extension View {
 
 /// 창 활성 여부와 무관하게 상태 색과 공통 모서리를 유지한다.
 private struct PanelActionButtonStyle: ButtonStyle {
-    enum Tone { case neutral, accent, detection, destructive }
+    enum Tone { case neutral, accent, detection, destructive, conversion, success }
     var tone: Tone = .neutral
     var compact = false
 
@@ -596,12 +612,14 @@ private struct PanelActionButtonBody: View {
         case .accent: return .accentColor
         case .detection: return .blue
         case .destructive: return Color(red: 0.82, green: 0.12, blue: 0.18)
+        case .conversion, .success: return .green
         case .neutral: return .primary
         }
     }
-    private var filled: Bool { tone == .accent || tone == .destructive }
+    private var filled: Bool { tone == .accent || tone == .destructive || tone == .success }
     private var usesDarkFilledForeground: Bool {
-        guard tone == .accent, let color = NSColor.controlAccentColor.usingColorSpace(.sRGB) else { return false }
+        guard tone == .accent || tone == .success,
+              let color = (tone == .success ? NSColor.systemGreen : NSColor.controlAccentColor).usingColorSpace(.sRGB) else { return false }
         func linear(_ value: CGFloat) -> CGFloat {
             value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
@@ -612,11 +630,11 @@ private struct PanelActionButtonBody: View {
     private var filledForeground: Color { usesDarkFilledForeground ? .black : .white }
     var body: some View {
         configuration.label
-            .foregroundStyle(enabled ? (filled ? filledForeground : tint) : Color.secondary)
+            .foregroundStyle(enabled ? (filled ? filledForeground : tint) : (tone == .success ? tint : Color.secondary))
             .padding(.horizontal, compact ? 8 : 10).padding(.vertical, compact ? 5 : 9)
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(enabled && filled ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : 0.06))
+                    .fill(enabled && filled ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : (tone == .success ? 0.18 : 0.06)))
                     .overlay {
                         if enabled && filled {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
