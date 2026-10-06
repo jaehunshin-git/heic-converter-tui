@@ -35,6 +35,45 @@ def test_process_eof_waits_for_conversion_and_stdout_is_json(tmp_path, heic_fact
     assert records[-1]["succeeded"] == 1 and records[-1]["remaining"] == []
 
 
+def test_parent_path_error_does_not_block_cancel_or_eof(tmp_path, heic_factory):
+    source = heic_factory(tmp_path / "source.heic")
+    output = tmp_path / "output"
+    output.mkdir()
+    process = subprocess.Popen([sys.executable, "-m", "heic_converter.worker"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    try:
+        process.stdin.write(request("prepare", files=[str(source)], output_directory=str(output)) + "\n")
+        process.stdin.flush()
+        records = [json.loads(process.stdout.readline())]
+        assert records[0]["event"] == "prepared"
+        output.rmdir()
+        output.write_bytes(b"parent replaced by a file")
+        process.stdin.write(request("run") + "\n")
+        process.stdin.flush()
+        records.append(json.loads(process.stdout.readline()))
+        assert records[-1]["event"] == "file_started"
+        process.stdin.write(request("cancel") + "\n")
+        process.stdin.close()
+        process.wait(timeout=10)
+        records.extend(json.loads(line) for line in process.stdout.read().splitlines())
+        assert process.returncode == 0, process.stderr.read()
+        assert [record["event"] for record in records] == [
+            "prepared", "file_started", "file_failed", "completed",
+        ]
+        assert records[2]["error_code"] == "output_unavailable"
+        assert records[-1]["failed"] == 1
+        assert output.read_bytes() == b"parent replaced by a file"
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+        if not process.stdin.closed:
+            process.stdin.close()
+        process.stdout.close()
+        process.stderr.close()
+
+
 def test_protocol_rejects_malformed_version_unknown_job_and_invalid_options(tmp_path):
     output = io.StringIO()
     session = worker.Worker(output)

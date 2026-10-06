@@ -43,6 +43,52 @@ final class ConverterKitTests: XCTestCase {
         queue.schedule(paths: ["/a.heic"], settings: settings)
         XCTAssertEqual(queue.next()?.files, ["/a.heic"])
     }
+    func testJobFailurePreservesLaterSnapshotsAndExistingResults() throws {
+        var queue = QueueState()
+        queue.add(["/a.heic", "/done.heic", "/rejected.heic", "/b.heic"].map { URL(fileURLWithPath: $0) })
+        var settings = AppSettings()
+        queue.schedule(paths: ["/a.heic", "/done.heic", "/rejected.heic"], settings: settings)
+        _ = queue.next()
+        queue.update(path: "/a.heic", status: .running)
+        queue.update(path: "/done.heic", status: .succeeded, destination: "/result.jpeg")
+        queue.update(path: "/rejected.heic", status: .failed, detail: "준비 단계에서 거절")
+        settings.options.outputFormat = "png"
+        settings.options.pngCompression = 9
+        settings.outputDirectory = "/reserved-output"
+        queue.schedule(paths: ["/b.heic"], settings: settings)
+        let pending = try XCTUnwrap(queue.jobs.first)
+        settings.options.outputFormat = "jpeg"
+        settings.outputDirectory = "/later-output"
+
+        queue.failCurrentJob("현재 작업 오류")
+        XCTAssertNil(queue.activeJob)
+        XCTAssertEqual(queue.items.map(\.status), [.failed, .succeeded, .failed, .scheduled])
+        XCTAssertEqual(queue.items[0].detail, "현재 작업 오류")
+        XCTAssertEqual(queue.items[1].destination, "/result.jpeg")
+        XCTAssertEqual(queue.items[2].detail, "준비 단계에서 거절")
+        XCTAssertEqual(queue.jobs.map(\.id), [pending.id])
+        let next = try XCTUnwrap(queue.next())
+        XCTAssertEqual(next.id, pending.id)
+        XCTAssertEqual(next.options.outputFormat, "png")
+        XCTAssertEqual(next.options.pngCompression, 9)
+        XCTAssertEqual(next.outputDirectory, "/reserved-output")
+    }
+    func testJobFailureDoesNotUnlockReaddedFileInLaterJob() throws {
+        var queue = QueueState()
+        let first = URL(fileURLWithPath: "/first.heic")
+        let second = URL(fileURLWithPath: "/second.heic")
+        queue.add([first, second])
+        queue.schedule(paths: [first.path, second.path], settings: AppSettings())
+        _ = queue.next()
+        queue.update(path: first.path, status: .succeeded)
+        queue.remove(first.path); queue.add([first])
+        queue.schedule(paths: [first.path], settings: AppSettings())
+        let pendingID = try XCTUnwrap(queue.jobs.first?.id)
+        queue.failCurrentJob("현재 작업 오류")
+        XCTAssertEqual(queue.items.first(where: { $0.id == second.path })?.status, .failed)
+        XCTAssertEqual(queue.items.first(where: { $0.id == first.path })?.status, .scheduled)
+        XCTAssertEqual(queue.next()?.id, pendingID)
+    }
     func testBulkRemovalPreservesLockedJobsAndPhysicalFiles() throws {
         let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent(UUID().uuidString)

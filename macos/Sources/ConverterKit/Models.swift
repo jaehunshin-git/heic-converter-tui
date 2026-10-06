@@ -170,13 +170,19 @@ public struct QueueState {
         }
         activeJob = nil
     }
-    public mutating func failActive(_ message: String) {
+    /// 작업 자체의 오류는 후속 예약과 그 설정 스냅샷에 영향을 주지 않는다.
+    public mutating func failCurrentJob(_ message: String) {
         if let job = activeJob {
+            let pendingPaths = Set(jobs.flatMap(\.files))
             for index in items.indices where job.files.contains(items[index].id) && items[index].status.locked {
+                guard !pendingPaths.contains(items[index].id) else { continue }
                 items[index].status = .failed; items[index].detail = message
             }
         }
         activeJob = nil
+    }
+    public mutating func failActive(_ message: String) {
+        failCurrentJob(message)
         // worker 장애 이후 예약 작업은 사용자가 다시 시작할 수 있도록 돌려놓는다.
         jobs.removeAll()
         for index in items.indices where items[index].status == .scheduled { items[index].status = .waiting }

@@ -17,6 +17,8 @@ import ConverterKit
     private let settingsStore: UserDefaults
     private var gate: ClipboardGate
     private var duplicateNoticePaths: [String: String] = [:]
+    private var awaitingPreparation = false
+    private var preparationRejectedCount = 0
     /// 자동 감지로 새 파일을 추가했을 때만 패널 표시를 요청한다.
     var onClipboardFilesAdded: (() -> Void)?
     var waitingCount: Int { queue.waitingCount }
@@ -29,6 +31,7 @@ import ConverterKit
         worker.onEvent = { [weak self] event in self?.receive(event) }
         worker.onFailure = { [weak self] error in
             guard let self else { return }
+            self.awaitingPreparation = false; self.preparationRejectedCount = 0
             self.queue.failActive(error); self.cancelling = false; self.message = error
         }
         guard startClipboard else { return }
@@ -115,6 +118,7 @@ import ConverterKit
     private func startNext() {
         guard let job = queue.next() else { return }
         cancelling = false
+        awaitingPreparation = true; preparationRejectedCount = 0
         do {
             try worker.start()
             try worker.send(WorkerRequest(command: "prepare", job: job))
@@ -123,7 +127,11 @@ import ConverterKit
     }
     func cancel() {
         guard let job = queue.activeJob, !cancelling else { return }
-        do { try worker.send(WorkerRequest(command: "cancel", job: job)); cancelling = true; message = "현재 파일 저장 후 취소합니다." }
+        do {
+            // 준비 실패 후의 unknown_job 응답이 다음 예약에 섞이지 않도록 prepared까지 기다린다.
+            if !awaitingPreparation { try worker.send(WorkerRequest(command: "cancel", job: job)) }
+            cancelling = true; message = "현재 파일 저장 후 취소합니다."
+        }
         catch { worker.fail(error.localizedDescription) }
     }
     private func receive(_ event: WorkerEvent) {
@@ -131,9 +139,11 @@ import ConverterKit
         guard job.id == event.jobID else { worker.fail("worker 응답의 작업 ID가 일치하지 않습니다."); return }
         switch event.event {
         case "prepared":
+            awaitingPreparation = false
+            // worker의 최종 집계는 수락한 입력만 세므로 준비 단계의 거절도 표시 집계에 포함한다.
+            preparationRejectedCount = Set((event.rejected ?? []).map(\.source)).count
             for rejection in event.rejected ?? [] { queue.update(path: rejection.source, status: .failed, detail: rejection.reason) }
-            if cancelling { return }
-            do { try worker.send(WorkerRequest(command: "run", job: job)) }
+            do { try worker.send(WorkerRequest(command: cancelling ? "cancel" : "run", job: job)) }
             catch { worker.fail(error.localizedDescription) }
         case "file_started":
             if let path = event.source { queue.update(path: path, status: .running) }
@@ -149,11 +159,19 @@ import ConverterKit
             if status == .skipped { detail = "동일한 이름의 결과가 있어 건너뛰었습니다." }
             queue.update(path: path, status: status, detail: detail, destination: event.destination)
         case "completed", "cancelled":
-            message = "\(event.event == "cancelled" ? "취소" : "완료"): 성공 \(event.succeeded ?? 0), 건너뜀 \(event.skipped ?? 0), 실패 \(event.failed ?? 0)"
+            message = "\(event.event == "cancelled" ? "취소" : "완료"): 성공 \(event.succeeded ?? 0), 건너뜀 \(event.skipped ?? 0), 실패 \((event.failed ?? 0) + preparationRejectedCount)"
+            preparationRejectedCount = 0; awaitingPreparation = false
             queue.finish(); cancelling = false; startNext()
         case "error":
             let error = "\(event.errorCode ?? "worker_error"): \(event.message ?? "작업을 시작하지 못했습니다.")"
-            queue.failActive(error); cancelling = false; message = error + " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
+            // prepare 검증 실패 또는 worker가 정리한 단일 실행 오류는 세션 장애가 아니다.
+            let jobError = (awaitingPreparation && event.errorCode == "invalid_request")
+                || event.errorCode == "worker_failed"
+            guard jobError else { worker.fail(error); return }
+            queue.failCurrentJob(error); cancelling = false
+            preparationRejectedCount = 0; awaitingPreparation = false
+            message = error + " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
+            startNext()
         default: break
         }
     }
