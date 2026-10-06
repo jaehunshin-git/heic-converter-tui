@@ -57,15 +57,34 @@ import ConverterKit
         try input.write(contentsOf: request.line())
     }
     func fail(_ message: String) { stop(); onFailure?(message) }
-    func stop() {
+    /// 종료된 worker만 임시 결과를 정리하도록 실제 프로세스 종료 뒤 콜백을 보낸다.
+    func stop(afterExit: (() -> Void)? = nil) {
+        if let afterExit {
+            if let process, process.isRunning {
+                let previousHandler = process.terminationHandler
+                process.terminationHandler = { task in
+                    previousHandler?(task)
+                    DispatchQueue.main.async { afterExit() }
+                }
+            } else { afterExit() }
+        }
         if stopping { return }
         generation = UUID()
         try? input?.close(); input = nil
         if let process {
             (process.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
             (process.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-            process.terminationHandler = nil
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                let previousHandler = process.terminationHandler
+                process.terminationHandler = { [weak self] task in
+                    previousHandler?(task)
+                    DispatchQueue.main.async {
+                        guard let self, self.process === task else { return }
+                        self.process = nil; self.stopping = false
+                    }
+                }
+                process.terminate()
+            }
         }
         stopping = process?.isRunning == true
         if !stopping { process = nil }

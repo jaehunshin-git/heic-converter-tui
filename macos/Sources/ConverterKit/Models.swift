@@ -75,6 +75,7 @@ public struct FileItem: Identifiable {
     public var status: FileStatus = .waiting
     public var detail: String?
     public var destination: String?
+    public var conversionDestination: ConversionDestination = .files
     public init(url: URL) { self.url = url; self.id = url.path }
 }
 
@@ -123,13 +124,17 @@ public enum InputValidator {
     }
 }
 
+public enum ConversionDestination: String { case files, clipboard }
+
 public struct ConversionJob {
     public let id = UUID().uuidString
     public let files: [String]
     public let outputDirectory: String
     public let options: ConversionOptions
-    public init(files: [String], settings: AppSettings) {
+    public let destination: ConversionDestination
+    public init(files: [String], settings: AppSettings, destination: ConversionDestination = .files) {
         self.files = files; outputDirectory = settings.outputDirectory; options = settings.options
+        self.destination = destination
     }
 }
 
@@ -144,11 +149,14 @@ public struct QueueState {
         var known = knownPaths
         for url in urls where !known.contains(url.path) { items.append(FileItem(url: url)); known.insert(url.path) }
     }
-    public mutating func schedule(paths: [String], settings: AppSettings) {
+    public mutating func schedule(paths: [String], settings: AppSettings, destination: ConversionDestination = .files) {
         let selected = items.filter { paths.contains($0.id) && ($0.status == .waiting || $0.status == .failed) }.map(\.id)
         guard !selected.isEmpty else { return }
-        for index in items.indices where selected.contains(items[index].id) { items[index].status = .scheduled; items[index].detail = nil }
-        jobs.append(ConversionJob(files: selected, settings: settings))
+        for index in items.indices where selected.contains(items[index].id) {
+            items[index].status = .scheduled; items[index].detail = nil
+            items[index].destination = nil; items[index].conversionDestination = destination
+        }
+        jobs.append(ConversionJob(files: selected, settings: settings, destination: destination))
     }
     public mutating func next() -> ConversionJob? {
         guard activeJob == nil, !jobs.isEmpty else { return nil }

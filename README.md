@@ -18,7 +18,9 @@ Apple Silicon Macs running macOS 15 or later. The app bundles its Python runtime
 and image codecs, so using the app does not require installing Python.
 
 Photos never leave your computer, source files are never modified, and converted
-files are written to a separate output directory. The package is available on
+files are written to a separate output directory in file-saving mode. The macOS
+app also offers an explicit convert-and-copy mode for image data. The package
+is available on
 [PyPI](https://pypi.org/project/heic-converter-tui/). For Korean documentation,
 see [README.ko.md](README.ko.md).
 
@@ -26,8 +28,9 @@ see [README.ko.md](README.ko.md).
 
 | Feature | Description |
 | --- | --- |
-| Menu bar app | Open a glass drop panel below the menu bar icon; keep it visible across focus changes and hide it without interrupting conversion or clipboard detection. |
-| File queue | Drop HEIC files or click the drop zone to select multiple files in Finder, then choose Convert now or Add to queue and inspect per-file results. Adding files never starts conversion automatically. |
+| Menu bar app | Left-click to toggle the glass drop panel; right-click for Show/Hide panel and Quit. Hiding keeps conversion and clipboard detection running. |
+| File queue | Drop HEIC files or click the drop zone to select multiple files in Finder, then choose Save now or Copy now for the selected mode, or Add to queue, and inspect per-file results. Adding files never starts conversion automatically. |
+| Save or copy after conversion | Choose equally sized save/copy buttons; save JPEG/PNG files to the selected folder or copy image data to the clipboard. |
 | Finder clipboard | Detect copied local file URLs in the background, or paste with Command-V. Detection is optional and remembers your preference. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
@@ -86,7 +89,9 @@ For a checkout awaiting release, build the app with the
 
 1. Verify the downloaded DMG against its SHA-256 checksum.
 2. Open the DMG and drag **HEIC Converter.app** to **Applications**.
-3. Launch the app and click its menu bar icon to show the drop panel.
+3. Launch the app and left-click its menu bar icon to show or hide the drop panel.
+   Right-click opens a native menu with **Show panel** or **Hide panel**,
+   depending on visibility, and **Quit**.
 
 The panel opens directly below its menu bar icon and stays within the current
 screen's available area. The compact panel defaults to 420 × 520 points, with a
@@ -109,7 +114,8 @@ Buttons share rounded corners; one clipboard button states “클립보드 감�
 or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. The neutral close button retains keyboard focus
 feedback; conversion and secondary actions occupy separate rows. Main buttons
 respond to hovering and pressing, respecting Reduce motion; disabled buttons stay
-static. The conversion button uses slightly larger text and an icon. The file list
+static. The two equally sized conversion buttons use slightly larger text and icons;
+the selected save/copy mode has green feedback. The file list
 has an icon, compact Retry and Clear buttons, and a smaller empty state.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
@@ -123,8 +129,17 @@ onto the blue drop zone, or click it to open the standard Finder file picker and
 select multiple HEIC files. **Command-O** opens the same picker. The drop zone
 shows hover, drag target, loading, accepted, and rejected feedback.
 Dropped and selected files appear in the staged list. Review the options, then
-choose **Convert now** or **Add to queue**; neither dropping nor selecting files
-starts conversion automatically. Queue items wait until you start conversion.
+choose **Save now** or **Copy now**, according to
+the currently selected mode, or **Add to queue**; neither dropping nor selecting
+files starts conversion or copies results automatically. Queue items wait until
+you explicitly choose **Convert and save** or
+**Convert and copy**. These buttons each occupy half the row.
+Both footer buttons are enabled even with only staged files and run or schedule staged and waiting files together in the chosen mode, without first adding them to the queue; Save now/Copy now runs only staged files in the current mode.
+Save writes JPEG/PNG files to the configured folder. Copy places the converted
+images themselves on the clipboard, rather than file URLs, for pasting into a
+document or messenger. Some receiving apps paste only the first image when
+multiple images are copied.
+The selected conflict policy applies only to saving; copy mode always renames temporary results so images with the same filename from different folders are all copied.
 **Command-V** still pastes copied local HEIC files into the queue. Finder copies
 add accepted new files to the queue and reveal the panel below the menu bar icon
 without taking focus or starting conversion. Duplicate or rejected inputs, startup
@@ -132,12 +147,12 @@ and re-enabled clipboard content do not trigger this reveal. Direct pastes add
 files to the queue without revealing the panel.
 An already open panel stays open, and the reveal respects Reduce motion.
 Closing the panel keeps the app, detection, and any current job running.
-Quit from the panel to stop the app.
+Quit from the panel or the menu bar icon’s right-click menu to stop the app.
 
 The default destination is `~/Pictures/HEIC Converter`, created on the first
-conversion. The defaults are JPEG, High quality (90), PNG compression 6, metadata
-`safe`, and conflict policy `rename`. App output is collected in the selected
-folder; the CLI continues to preserve directory layout. Settings and the saved
+file-saving conversion. Copy mode leaves no results in this folder. The defaults
+are JPEG, High quality (90), PNG compression 6, metadata `safe`, and conflict
+policy `rename`. App file-saving output is collected in the selected folder; the CLI continues to preserve directory layout. Settings and the saved
 destination persist, while the file list and clipboard history are never saved.
 Existing user-selected destinations are preserved; only the known QA setting
 `/private/tmp/heic-converter-ui-check/converted` resets to the new default, without
@@ -151,7 +166,18 @@ Removing an item allows that input to be added again; completed items otherwise
 remain deduplicated until cleared. Duplicate notices clear when their related
 files leave the lists; other input errors remain. Cancel finishes the current file and returns
 unstarted files to the queue. New arrivals and option changes do not change an
-already scheduled job.
+already scheduled job: its mode and options are captured when scheduled.
+Retry keeps each failed item’s previous mode.
+
+Copy jobs direct the worker to a temporary job folder and read the completed
+PNG/JPEG bytes as image data. Each image becomes its own pasteboard item with
+its original PNG/JPEG data and a TIFF fallback. Temporary results are cleaned
+up after success, cancellation, or failure; source files remain unchanged.
+Only an explicitly selected copy action publishes successful results after the
+worker’s `completed` event. Zero results, cancellation, or another clipboard
+copy while the job is pending or converting leaves the current clipboard intact
+and reports why copying did not occur. Automatic detection alone never
+converts or copies images.
 
 The macOS app offers four JPEG quality presets: **Low (60)**, **Medium (80)**,
 **High (90, default)**, and **Raw (100)**. Raw means maximum JPEG quality;
@@ -177,10 +203,13 @@ and icon work is tracked separately in
 [issue #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5).
 Clipboard detection uses a 0.75-second poll and skips
 existing clipboard content on startup or re-enable. A denied access status stops
-automatic reading; use file drops or the Finder file picker instead. The app does not modify
-the clipboard or source files. Manual copying of converted results and moving
-results to Trash are planned in
-[issue #6](https://github.com/jaehunshin-git/heic-converter-tui/issues/6).
+automatic reading; use file drops or the Finder file picker instead. Detection,
+file-saving conversion, and input actions leave the clipboard unchanged; only
+explicit convert-and-copy actions write image results. Source files remain
+unchanged in both modes. Manual copying of already saved result files and
+moving results to Trash remain planned in
+[issue #6](https://github.com/jaehunshin-git/heic-converter-tui/issues/6);
+convert-and-copy image output is included in PR #3.
 
 ### CLI/TUI requirements
 

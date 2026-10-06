@@ -36,8 +36,9 @@ final class DropPanel: NSPanel {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "photo.badge.arrow.down", accessibilityDescription: "HEIC Converter")
             button.imagePosition = .imageLeading
-            button.target = self; button.action = #selector(togglePanel)
-            button.toolTip = "HEIC Converter · 클릭하여 패널 열기 또는 숨기기"
+            button.target = self; button.action = #selector(handleStatusItemClick(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.toolTip = "HEIC Converter · 왼쪽 클릭: 패널 열기 또는 숨기기 · 오른쪽 클릭: 앱 메뉴"
         }
         panel = DropPanel(contentRect: NSRect(origin: .zero, size: PanelPlacement.defaultSize),
                           styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
@@ -125,9 +126,24 @@ final class DropPanel: NSPanel {
         }
         check("입력 모델", modelInputSmokeTest())
         check("작업 오류 복구와 준비 거절 집계", await modelWorkerRecoverySmokeTest())
+        check("이미지 클립보드 복사와 파일 저장 분리", await clipboardConversionSmokeTest())
         check("파일 추가 높이와 수동 크기 보존", await inputPanelSizingSmokeTest())
         togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
         togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
+        let visibleMenu = makeStatusMenu()
+        check("열린 패널 메뉴와 종료 경로", visibleMenu.items.map(\.title) == ["패널 숨기기", "", "앱 종료"]
+            && visibleMenu.items[2].action == #selector(NSApplication.terminate(_:))
+            && visibleMenu.items[2].target === NSApp)
+        visibleMenu.performActionForItem(at: 0)
+        check("메뉴에서 패널 숨김", !panel.isVisible)
+        let hiddenMenu = makeStatusMenu()
+        check("숨긴 패널의 열기 메뉴", hiddenMenu.items[0].title == "패널 열기")
+        hiddenMenu.performActionForItem(at: 0)
+        check("메뉴에서 패널 다시 표시", panel.isVisible && statusItem.menu == nil)
+        statusItem.button?.performClick(nil)
+        check("버튼 액션으로 패널 숨김", !panel.isVisible)
+        statusItem.button?.performClick(nil)
+        check("버튼 액션으로 패널 다시 표시", panel.isVisible)
         check("다시 표시한 배치와 크기", panelPlacementSmokeTest())
         NSApp.deactivate()
         check("비활성화 후 표시 유지", panel.isVisible)
@@ -170,6 +186,30 @@ final class DropPanel: NSPanel {
         model.shutdown()
         print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
         exit(passed ? 0 : 1)
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            // 메뉴 추적 중에만 연결해 왼쪽 클릭의 패널 토글을 유지한다.
+            statusItem.menu = makeStatusMenu()
+            defer { statusItem.menu = nil }
+            sender.performClick(nil)
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func makeStatusMenu() -> NSMenu {
+        let menu = NSMenu()
+        let panelItem = NSMenuItem(title: panel.isVisible ? "패널 숨기기" : "패널 열기",
+                                   action: #selector(togglePanel), keyEquivalent: "")
+        panelItem.target = self
+        menu.addItem(panelItem)
+        menu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "앱 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quitItem.target = NSApp
+        menu.addItem(quitItem)
+        return menu
     }
 
     @objc func togglePanel() {
@@ -427,6 +467,13 @@ final class DropPanel: NSPanel {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { hidePanel(); return false }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        model.shutdown {
+            // 즉시 종료 가능한 경우에도 terminateLater 응답 뒤에 완료를 전달한다.
+            DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
+        }
+        return .terminateLater
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()
