@@ -1,4 +1,4 @@
-# HEIC Converter TUI
+# HEIC Converter
 
 [![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
 [![Downloads](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
@@ -7,14 +7,20 @@
 ![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
 ![Local processing](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
 
-> A macOS-first batch HEIC converter: configure with arrow keys, automate with the CLI.
+> Convert locally from the macOS menu bar, configure with arrow keys, or automate with the CLI.
 
 `heic-converter-tui` converts `.heic` photos in a directory to JPEG or PNG. Run it
 without arguments for an interactive terminal UI driven by arrow keys and Enter,
 or provide options for scripts and other non-interactive environments.
 
+Version 0.3.0 also includes **HEIC Converter**, a standalone menu bar app for
+Apple Silicon Macs running macOS 15 or later. The app bundles its Python runtime
+and image codecs, so using the app does not require installing Python.
+
 Photos never leave your computer, source files are never modified, and converted
-files are written to a separate output directory. The package is available on
+files are written to a separate output directory in file-saving mode. The macOS
+app also offers an explicit convert-and-copy mode for image data. The package
+is available on
 [PyPI](https://pypi.org/project/heic-converter-tui/). For Korean documentation,
 see [README.ko.md](README.ko.md).
 
@@ -22,6 +28,10 @@ see [README.ko.md](README.ko.md).
 
 | Feature | Description |
 | --- | --- |
+| Menu bar app | Left-click to toggle the glass drop panel; right-click for Show/Hide panel and Quit. Hiding keeps conversion and clipboard detection running. |
+| File queue | Drop HEIC files or click the drop zone to select multiple files in Finder, then choose Save now or Copy now for the selected mode, or Add to queue, and inspect per-file results. Adding files never starts conversion automatically. |
+| Save or copy after conversion | Choose equally sized save/copy buttons; save JPEG/PNG files to the selected folder or copy image data to the clipboard. |
+| Finder clipboard | Detect copied local file URLs in the background, or paste with Command-V. Detection is optional and remembers your preference. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
 | JPEG and PNG output | Configure JPEG quality or PNG compression level. |
@@ -43,6 +53,7 @@ see [README.ko.md](README.ko.md).
 | Category | Technology |
 | --- | --- |
 | Runtime | Python 3.11+ |
+| macOS app | SwiftUI, AppKit NSPanel, bundled JSONL worker |
 | CLI | Typer, Rich |
 | TUI | Questionary |
 | Imaging | Pillow, pillow-heif, macOS ImageIO through PyObjC |
@@ -53,9 +64,14 @@ see [README.ko.md](README.ko.md).
 ```text
 heic-converter/
 ├── src/heic_converter/
-│   ├── cli.py              # CLI validation, conversion execution, and summary
+│   ├── cli.py              # CLI options, progress, and summary
 │   ├── core.py             # File discovery, path planning, conversion, atomic writes
+│   ├── service.py          # Shared batch service and explicit file-list input
+│   ├── worker.py           # Versioned JSONL requests and events
 │   └── tui.py              # Arrow-key interactive configuration UI
+├── macos/                  # Swift Package app and tests
+├── packaging/macos/        # Pinned worker build, signing, and DMG validation
+├── docs/                   # Korean build and verification documentation
 ├── tests/                  # CLI, TUI, image conversion, and file-handling tests
 ├── pyproject.toml          # Package metadata and dependencies
 └── uv.lock                 # Locked development dependencies
@@ -63,7 +79,140 @@ heic-converter/
 
 ## 🚀 Getting started
 
-### Requirements
+### Standalone macOS app
+
+The app targets **Apple Silicon arm64, macOS 15+**. Intel and Universal2 builds
+are outside the initial scope. A released app is distributed as a DMG with a
+SHA-256 checksum through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
+For a checkout awaiting release, build the app with the
+[build instructions](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md).
+
+1. Verify the downloaded DMG against its SHA-256 checksum.
+2. Open the DMG and drag **HEIC Converter.app** to **Applications**.
+3. Launch the app and left-click its menu bar icon to show or hide the drop panel.
+   Right-click opens a native menu with **Show panel** or **Hide panel**,
+   depending on visibility, and **Quit**.
+
+The panel opens directly below its menu bar icon and stays within the current
+screen's available area. The compact panel defaults to 420 × 520 points, with a
+380 × 520 minimum. Settings start collapsed, with the small JPEG/PNG selector,
+quality or PNG compression, and right-aligned destination on one line below the
+header. Adding files increases the panel height to show thumbnails; the first three
+rows expand it to 620, 684, and 748 points. Longer lists scroll to the newest files,
+and the panel stays within the available screen area. Removing files reduces the
+automatic height, while a taller manually resized window is preserved. Expanding
+settings also increases the automatic height so the file list stays visible;
+collapsing them restores the compact height. Both sizes fit within the available
+screen area. Long paths shorten from the beginning to show the end. Expanded settings
+use native pickers for format, quality or compression, metadata, and conflict
+policies. Metadata and conflict fields sit side by side; the destination has a
+Change button.
+Hover over the JPEG quality selector for the encoder explanation. Your latest
+conversion settings and destination are restored after restarting the app. Native blur and translucent cards use a stronger background for
+readability. **Reduce transparency** and increased contrast prioritize readability.
+Buttons share rounded corners; one clipboard button states “클립보드 감지 켜짐”
+or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. The neutral close button retains keyboard focus
+feedback; conversion and secondary actions occupy separate rows. Main buttons
+respond to hovering and pressing, respecting Reduce motion; disabled buttons stay
+static. The two equally sized conversion buttons use slightly larger text and icons;
+both buttons are blue by default. Clicking shows a green checkmark for 1.5 seconds
+to acknowledge the request, then restores blue; conversion results appear in the status message. The file list
+has an icon, compact Retry and Clear buttons, and a smaller empty state.
+
+The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
+the first launch, use **System Settings → Privacy & Security → Open Anyway**
+after attempting to launch this app. Follow
+[Apple's instructions](https://support.apple.com/102445).
+DMG packaging does not bypass Gatekeeper.
+
+The panel header describes converting HEIC files to JPEG or PNG. Drag local `.heic` files
+onto the blue drop zone, or click it to open the standard Finder file picker and
+select multiple HEIC files. **Command-O** opens the same picker. The drop zone
+shows hover, drag target, loading, accepted, and rejected feedback.
+Dropped and selected files appear in the staged list. Review the options, then
+choose **Save now** or **Copy now**, according to
+the currently selected mode, or **Add to queue**; neither dropping nor selecting
+files starts conversion or copies results automatically. Queue items wait until
+you explicitly choose **Convert and save** or
+**Convert and copy**. These buttons each occupy half the row.
+Both footer buttons are enabled even with only staged files and run or schedule staged and waiting files together in the chosen mode, without first adding them to the queue; Save now/Copy now runs only staged files in the current mode.
+Save writes JPEG/PNG files to the configured folder. Copy places the converted
+images themselves on the clipboard, rather than file URLs, for pasting into a
+document or messenger. Some receiving apps paste only the first image when
+multiple images are copied.
+The selected conflict policy applies only to saving; copy mode always renames temporary results so images with the same filename from different folders are all copied.
+**Command-V** still pastes copied local HEIC files into the queue. Finder copies
+add accepted new files to the queue and reveal the panel below the menu bar icon
+without taking focus or starting conversion. Duplicate or rejected inputs, startup
+and re-enabled clipboard content do not trigger this reveal. Direct pastes add
+files to the queue without revealing the panel.
+An already open panel stays open, and the reveal respects Reduce motion.
+Closing the panel keeps the app, detection, and any current job running.
+Quit from the panel or the menu bar icon’s right-click menu to stop the app.
+
+The default destination is `~/Pictures/HEIC Converter`, created on the first
+file-saving conversion. Copy mode leaves no results in this folder. The defaults
+are JPEG, High quality (90), PNG compression 6, metadata `safe`, and conflict
+policy `rename`. App file-saving output is collected in the selected folder; the CLI continues to preserve directory layout. Settings and the saved
+destination persist, while the file list and clipboard history are never saved.
+Existing user-selected destinations are preserved; only the known QA setting
+`/private/tmp/heic-converter-ui-check/converted` resets to the new default, without
+moving or deleting files. Home paths appear with `~` in the app.
+Click file rows to select multiple items; checkmarks and highlighting show the
+selection. Use Select all or Deselect, then Remove selected, or use Remove all to
+clear every removable item. Individual × buttons remain available. Scheduled and
+converting items cannot be selected or removed by any of these actions. Removal
+only changes the list: source and converted files remain on disk.
+Removing an item allows that input to be added again; completed items otherwise
+remain deduplicated until cleared. Duplicate notices clear when their related
+files leave the lists; other input errors remain. Cancel finishes the current file and returns
+unstarted files to the queue. New arrivals and option changes do not change an
+already scheduled job: its mode and options are captured when scheduled.
+Retry keeps each failed item’s previous mode.
+
+Copy jobs direct the worker to a temporary job folder and read the completed
+PNG/JPEG bytes as image data. Each image becomes its own pasteboard item with
+its original PNG/JPEG data and a TIFF fallback. Temporary results are cleaned
+up after success, cancellation, or failure; source files remain unchanged.
+Only an explicitly selected copy action publishes successful results after the
+worker’s `completed` event. Zero results, cancellation, or another clipboard
+copy while the job is pending or converting leaves the current clipboard intact
+and reports why copying did not occur. Automatic detection alone never
+converts or copies images.
+
+The macOS app offers four JPEG quality presets: **Low (60)**, **Medium (80)**,
+**High (90, default)**, and **Raw (100)**. Raw means maximum JPEG quality;
+the numbers are encoder quality settings, not percentages. JPEG remains lossy,
+and this option produces neither a RAW file nor lossless output. Existing saved
+numeric quality values remain unchanged until you choose a preset; the app displays the nearest preset. PNG displays **Small (9)**,
+**Balanced (6, default)**, **Fast (3)**, and **None (0)** in that order. These preserve the same pixels while
+trading compression time for file size; native HDR PNG ignores this setting.
+Saved numeric values and scheduled job settings are preserved. The TUI and CLI
+retain their existing controls.
+
+Selected and queued files have small previews decoded asynchronously with bounded
+in-memory caching. Unavailable previews use a fallback icon; previews do not alter
+source files or conversion.
+
+Only local case-insensitive `.heic` files are accepted. Folders, symlinks,
+unreadable files, `.heif`, clipboard bitmap images, and Photos file promises are
+excluded with a reason. Photos guidance appears in the drop zone tooltip and
+rejection messages, rather than as a persistent drop zone note. For Photos, export the unmodified HEIC original to Finder,
+then drop or copy that file. Direct Photos drops are tracked in
+[issue #4](https://github.com/jaehunshin-git/heic-converter-tui/issues/4); app naming
+and icon work is tracked separately in
+[issue #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5).
+Clipboard detection uses a 0.75-second poll and skips
+existing clipboard content on startup or re-enable. A denied access status stops
+automatic reading; use file drops or the Finder file picker instead. Detection,
+file-saving conversion, and input actions leave the clipboard unchanged; only
+explicit convert-and-copy actions write image results. Source files remain
+unchanged in both modes. Manual copying of already saved result files and
+moving results to Trash remain planned in
+[issue #6](https://github.com/jaehunshin-git/heic-converter-tui/issues/6);
+convert-and-copy image output is included in PR #3.
+
+### CLI/TUI requirements
 
 - Python 3.11 or later
 - macOS is the primary supported platform
@@ -229,7 +378,7 @@ value within the ranges above.
 | --- | --- |
 | `safe` | Removes GPS and XMP while retaining other EXIF data and ICC profiles where possible. |
 | `preserve` | Retains EXIF, XMP, and ICC profiles where supported by the conversion libraries. |
-| `strip` | Removes EXIF and XMP. HDR PNG retains the ICC profile required for correct color rendering. |
+| `strip` | Removes EXIF and XMP. HDR PNG retains its ICC profile or CICP color signaling required for correct rendering. |
 
 The converter applies image orientation to pixels and, when metadata is written,
 normalizes the output EXIF orientation value to `1`. JPEG does not support alpha,
@@ -239,7 +388,11 @@ On macOS 15 or later, HEIC images with an Apple HDR gain map are converted to
 16-bit HDR PNG with an HDR color profile. This preserves the source image's HDR
 brightness and color appearance on compatible displays. Other environments
 save the base SDR image, which may look different from the HEIC on an HDR
-display. JPEG output is SDR.
+display. JPEG output is SDR. App results report whether HDR was applied and the
+reason for SDR fallback. HDR preservation depends on the source gain map and
+available ImageIO APIs; it is not guaranteed for every HEIC. PNG compression
+level applies to the Pillow SDR path; the native HDR encoder controls its own
+compression.
 
 ### File discovery and conflict handling
 
@@ -261,7 +414,7 @@ JPEG or PNG. It does not support:
 - OCR or text extraction
 - Live Photo video processing
 - Extracting auxiliary images, sequences, or video instead of the primary still image
-- Single-file input
+- Single-file input through the CLI (the app accepts explicit file lists)
 
 ### Exit codes
 
@@ -275,3 +428,6 @@ JPEG or PNG. It does not support:
 ## License
 
 This project is distributed under the [MIT License](LICENSE).
+Bundled third-party components retain their own licenses, including the codec
+notices shipped with pillow-heif. See the app's
+`Contents/Resources/Licenses` for the Python runtime and library notices.

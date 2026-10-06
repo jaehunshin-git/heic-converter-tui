@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from conftest import open_image, run_cli
+from rich.text import Text
 
 
 def invoke(input_dir: Path, output_dir: Path, *extra: str):
@@ -13,12 +14,19 @@ def invoke(input_dir: Path, output_dir: Path, *extra: str):
     return run_cli("--input", str(input_dir), "--output", str(output_dir), *extra)
 
 
-def test_help_lists_the_public_options():
+@pytest.mark.parametrize("force_color", [False, True])
+def test_help_lists_the_public_options(monkeypatch, force_color):
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
     result = run_cli("--help")
 
     assert result.exit_code == 0, result.output
+    # Rich는 색상 환경에서 옵션 문자열 중간에도 ANSI 스타일 코드를 삽입합니다.
+    visible_help = Text.from_ansi(result.output).plain
     for option in ("--input", "--output", "--format", "--jpeg-quality", "--png-compression", "--recursive", "--metadata", "--on-conflict"):
-        assert option in result.output
+        assert option in visible_help
 
 
 @pytest.mark.parametrize(
