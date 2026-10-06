@@ -115,7 +115,8 @@ or “클립보드 감지 꺼짐” and turns blue when enabled. Quit is red. Th
 feedback; conversion and secondary actions occupy separate rows. Main buttons
 respond to hovering and pressing, respecting Reduce motion; disabled buttons stay
 static. The two equally sized conversion buttons use slightly larger text and icons;
-the selected save/copy mode has green feedback. The file list
+both buttons are blue by default. Clicking shows a green checkmark for 1.5 seconds
+to acknowledge the request, then restores blue; conversion results appear in the status message. The file list
 has an icon, compact Retry and Clear buttons, and a smaller empty state.
 
 The initial app uses **ad-hoc signing** and is not notarized. If macOS blocks
