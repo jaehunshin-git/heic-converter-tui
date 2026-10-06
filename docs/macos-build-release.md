@@ -105,3 +105,18 @@ Store는 후속 범위다.
 조건을 따른다. Pillow-heif binary wheel에는 GPL/LGPL 코덱 고지가 포함될 수 있다.
 배포된 앱의 `Contents/Resources/Licenses`에서 해당 버전의 라이선스 전문, 고지와
 소스 링크를 확인한다. 앱 배포 시 이 고지를 함께 제공한다.
+
+고정된 pillow-heif 1.1.1 wheel의 `LICENSES_bundled.txt`에는 이전 코덱의 소스
+링크가 남아 있다. 수집 스크립트는 `libheif_info()`의 실제 버전을 아래 목록과
+대조한 뒤, 라이선스 표기는 유지하면서 버전과 소스·라이선스 링크를 보정한다.
+AVIF/libaom이 없는 현재 wheel에서는 이전 libaom 항목을 제외한다. wheel 버전이나
+코덱 구성이 달라지면 빌드를 실패시켜 고지를 다시 확인하도록 한다.
+
+| 코덱 | 실제 버전 | 공식 소스 |
+| --- | --- | --- |
+| libheif | 1.20.2 | [v1.20.2](https://github.com/strukturag/libheif/tree/v1.20.2) |
+| libde265 | 1.0.16 | [v1.0.16](https://github.com/strukturag/libde265/tree/v1.0.16) |
+| x265 | 4.1+1-1d117be | [1d117bed4747758b51bd2c124d738527e30392cb](https://github.com/Multicorewareinc/x265/tree/1d117bed4747758b51bd2c124d738527e30392cb) |
+
+이 대조는 번들 버전과 고지 링크의 정확도를 확인하는 절차이며, 배포의 모든
+라이선스 의무를 충족했다는 법률 판단을 대신하지 않는다.
