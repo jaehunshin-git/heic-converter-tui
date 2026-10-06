@@ -132,6 +132,20 @@ final class DropPanel: NSPanel {
         NSApp.deactivate()
         check("비활성화 후 표시 유지", panel.isVisible)
         _ = windowShouldClose(panel); check("닫기 후 숨김", !panel.isVisible)
+        // 비활성화·숨김의 WindowServer 응답이 안정된 뒤 자동 표시의 기준을 잡는다.
+        let focusDeadline = Date().addingTimeInterval(2)
+        var stableFocusSince = Date()
+        var observedActive = NSApp.isActive
+        var observedKeyWindow = NSApp.keyWindow
+        while Date() < focusDeadline, Date().timeIntervalSince(stableFocusSince) < 0.35 {
+            try? await Task.sleep(for: .milliseconds(20))
+            if NSApp.isActive != observedActive || NSApp.keyWindow !== observedKeyWindow {
+                observedActive = NSApp.isActive
+                observedKeyWindow = NSApp.keyWindow
+                stableFocusSince = Date()
+            }
+        }
+        check("자동 표시 전 포커스 안정화", Date().timeIntervalSince(stableFocusSince) >= 0.35)
         let wasActive = NSApp.isActive
         let previousKeyWindow = NSApp.keyWindow
         showPanelForClipboard(animated: false)

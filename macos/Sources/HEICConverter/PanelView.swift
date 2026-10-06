@@ -18,7 +18,7 @@ struct PanelView: View {
     private var dropTitle: String {
         if model.dropTargeted { return "여기에 놓아서 파일 선택" }
         switch presentation.dropFeedback {
-        case .idle: return "파일을 놓거나 클릭해 붙여넣기"
+        case .idle: return "파일을 놓거나 클릭해 선택"
         case .loading: return "파일을 확인하고 있습니다"
         case .accepted: return "HEIC 파일을 선택했습니다"
         case .rejected: return "추가할 수 없는 파일입니다"
@@ -85,7 +85,7 @@ struct PanelView: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text("HEIC Converter").font(.title3.bold())
-                Text("원본을 보존하며 JPEG · PNG로 변환").font(.caption).foregroundStyle(.secondary)
+                Text("HEIC 파일을 JPEG · PNG로 변환").font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 32, height: 32) }
@@ -97,7 +97,7 @@ struct PanelView: View {
     }
 
     private var dropZone: some View {
-        Button(action: model.paste) {
+        Button(action: chooseFiles) {
             VStack(spacing: 6) {
                 if presentation.dropFeedback == .loading {
                     ProgressView().controlSize(.small).frame(height: 22)
@@ -109,7 +109,7 @@ struct PanelView: View {
                 }
                 Text(dropTitle).font(.headline).foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
-                Text("Finder에서 HEIC 파일을 복사한 뒤 클릭하세요")
+                Text("HEIC 파일을 끌어놓거나 클릭해 파일을 선택하세요")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, minHeight: 100).padding(12)
@@ -120,10 +120,10 @@ struct PanelView: View {
             .contentShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("v", modifiers: .command)
+        .keyboardShortcut("o", modifiers: .command)
         .focused($dropFocused).focusEffectDisabled()
-        .accessibilityLabel("HEIC 파일 붙여넣기")
-        .accessibilityHint("Finder에서 복사한 HEIC 파일을 대기 목록에 추가합니다. 파일을 끌어놓을 수도 있습니다.")
+        .accessibilityLabel("HEIC 파일 선택")
+        .accessibilityHint("파일 선택 창에서 HEIC 파일을 선택합니다. 파일을 끌어놓을 수도 있습니다.")
         .onHover { presentation.dropHovered = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: dropHighlighted)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: model.dropTargeted)
@@ -133,6 +133,12 @@ struct PanelView: View {
         .help("Photos 직접 드롭은 아직 지원하지 않습니다. Photos에서 수정되지 않은 HEIC 원본을 내보낸 뒤 Finder에서 드롭하세요.")
         .onDrop(of: [UTType.fileURL.identifier] + NSFilePromiseReceiver.readableDraggedTypes,
                 isTargeted: $model.dropTargeted, perform: drop)
+    }
+
+    private func chooseFiles() {
+        guard let accepted = model.chooseFiles() else { return }
+        presentation.latestDropID = UUID()
+        presentation.dropFeedback = accepted ? .accepted : .rejected
     }
 
     private var stagedFiles: some View {
