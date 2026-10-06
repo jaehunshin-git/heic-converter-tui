@@ -14,6 +14,7 @@ from .core import (
     ConflictMode,
     ConversionResult,
     MetadataMode,
+    OutputConflictError,
     OutputFormat,
     choose_destination,
     convert_image,
@@ -160,6 +161,8 @@ def prepare_files(
 
 
 def _error_code(error: Exception, source: Path) -> str:
+    if isinstance(error, NotADirectoryError):
+        return "input_missing" if not source.is_file() else "output_unavailable"
     if isinstance(error, FileNotFoundError):
         return "input_missing" if not source.exists() else "output_unavailable"
     if isinstance(error, PermissionError):
@@ -208,13 +211,23 @@ def run_batch(
                         jpeg_quality=options.jpeg_quality, png_compression=options.png_compression,
                         metadata=options.metadata, overwrite=options.on_conflict == "overwrite",
                     )
-                except FileExistsError:
+                except FileExistsError as exc:
+                    reserved.discard(destination)
+                    # 원자적 결과 저장에서 발생한 목적지 충돌만 재시도합니다.
+                    # 기존 converter의 일반 FileExistsError는 실제 목적지로 확인합니다.
+                    if not isinstance(exc, OutputConflictError) and not (
+                        destination.exists() or destination.is_symlink()
+                    ):
+                        raise
                     if options.on_conflict == "rename":
                         continue
                     if options.on_conflict == "skip":
                         skipped += 1
                         send("file_skipped", {**fields, "reason": "저장 중 같은 이름의 파일이 생성되었습니다."})
                         break
+                    raise
+                except Exception:
+                    reserved.discard(destination)
                     raise
                 succeeded += 1
                 send("file_succeeded", {

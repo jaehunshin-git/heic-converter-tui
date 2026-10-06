@@ -124,6 +124,7 @@ final class DropPanel: NSPanel {
             check("간결한 기본 크기", panel.frame.size == expected.size)
         }
         check("입력 모델", modelInputSmokeTest())
+        check("작업 오류 복구와 준비 거절 집계", await modelWorkerRecoverySmokeTest())
         check("파일 추가 높이와 수동 크기 보존", await inputPanelSizingSmokeTest())
         togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
         togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
@@ -329,6 +330,24 @@ final class DropPanel: NSPanel {
         func settle(_ duration: TimeInterval = 0.08) async {
             // 중첩 RunLoop 대신 실행권을 반환해 실제 AppKit 이벤트 루프가 갱신하도록 한다.
             try? await Task.sleep(for: .seconds(duration))
+            // 메뉴 항목 수가 바뀌면 WindowServer의 아이콘 재배치가 뒤늦게 도착할 수 있다.
+            // 배치를 강제하지 않고 실제 높이·메뉴 기준 위치가 두 번 연속 안정될 때 검사한다.
+            let deadline = Date().addingTimeInterval(1)
+            var stableSamples = 0
+            while Date() < deadline {
+                if let geometry = anchorGeometry() {
+                    let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame,
+                                                        size: NSSize(width: panel.frame.width, height: expectedHeight()))
+                    let stable = !inputLayoutScheduled && panelRevealTimer == nil
+                        && panel.frame.height == expected.height
+                        && abs(panel.frame.minX - expected.minX) < 1
+                        && abs(panel.frame.maxY - expected.maxY) < 1
+                    stableSamples = stable ? stableSamples + 1 : 0
+                    if stableSamples == 2 { return }
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            print("패널 높이·메뉴 아이콘 배치 안정화 시간 초과")
         }
         func expectedHeight() -> CGFloat {
             guard let geometry = anchorGeometry() else { return 0 }
@@ -616,6 +635,112 @@ final class DropPanel: NSPanel {
     return true
 }
 
+/// 실제 AppModel과 번들 worker의 오류·취소 이벤트를 격리된 파일·설정으로 검증한다.
+@MainActor func modelWorkerRecoverySmokeTest() async -> Bool {
+    let name = "heic-worker-recovery-\(UUID().uuidString)"
+    let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(name)
+    let clipboard = NSPasteboard(name: NSPasteboard.Name(name))
+    guard let defaults = UserDefaults(suiteName: name) else { return false }
+    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
+    defer {
+        model.shutdown(); clipboard.releaseGlobally(); defaults.removePersistentDomain(forName: name)
+        try? FileManager.default.removeItem(at: folder)
+    }
+    func check(_ label: String, _ value: Bool) -> Bool {
+        print("작업 모델 검증 [\(label)]: \(value ? "성공" : "실패")")
+        if !value {
+            print("집계: \(model.message)")
+            for item in model.queue.items { print("항목: \(item.url.lastPathComponent), \(item.status.rawValue), \(item.detail ?? ""), \(item.destination ?? "")") }
+        }
+        return value
+    }
+    func waitUntilIdle() async -> Bool {
+        let deadline = Date().addingTimeInterval(30)
+        while model.active && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        return check("작업 종료", !model.active && model.queue.jobs.isEmpty)
+    }
+    func add(_ urls: [URL]) { model.stage(urls); model.acceptStaged(convert: false) }
+    do {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appendingPathComponent("정상.heic")
+        guard let context = CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let image = context.makeImage(),
+              let encoder = CGImageDestinationCreateWithURL(source as CFURL, UTType.heic.identifier as CFString, 1, nil) else { return false }
+        CGImageDestinationAddImage(encoder, image, nil)
+        guard CGImageDestinationFinalize(encoder) else { return false }
+        let original = try Data(contentsOf: source)
+        let removed = folder.appendingPathComponent("삭제됨.heic")
+        model.settings.outputDirectory = folder.appendingPathComponent("거절 결과").path
+
+        // 실행 직전에 제거된 입력만 있는 작업도 실패 1개로 집계한다.
+        try original.write(to: removed); add([removed]); try FileManager.default.removeItem(at: removed)
+        model.startWaiting()
+        guard await waitUntilIdle(), check("전체 준비 거절 집계", model.queue.items.map(\.status) == [.failed]
+            && model.message == "완료: 성공 0, 건너뜀 0, 실패 1") else { return false }
+        model.removeAll()
+
+        // 실행 실패와 준비 거절이 섞여 있어도 각 입력을 한 번씩 센다.
+        let corrupt = folder.appendingPathComponent("손상.heic")
+        try Data([1]).write(to: corrupt); try original.write(to: removed)
+        add([removed, corrupt, source]); try FileManager.default.removeItem(at: removed)
+        model.startWaiting()
+        guard await waitUntilIdle(), check("준비 거절과 실행 실패 집계", model.queue.items.map(\.status) == [.failed, .failed, .succeeded]
+            && model.message == "완료: 성공 1, 건너뜀 0, 실패 2") else { return false }
+        model.removeAll()
+
+        // prepare 직후 취소해도 거절 수는 집계하고 수락한 미처리 입력은 대기로 돌아간다.
+        try original.write(to: removed); add([removed, source]); try FileManager.default.removeItem(at: removed)
+        model.settings.outputDirectory = folder.appendingPathComponent("취소 결과").path
+        model.startWaiting(); model.cancel()
+        guard await waitUntilIdle(), check("취소와 준비 거절 집계", model.queue.items.map(\.status) == [.failed, .waiting]
+            && model.message == "취소: 성공 0, 건너뜀 0, 실패 1"
+            && !FileManager.default.fileExists(atPath: model.settings.outputDirectory)) else { return false }
+        model.removeAll()
+
+        // 준비 오류가 연달아 발생해도 후속 PNG 예약과 저장 위치 스냅샷을 유지한다.
+        let first = folder.appendingPathComponent("첫 작업.heic")
+        let second = folder.appendingPathComponent("둘째 작업.heic")
+        try original.write(to: first); try original.write(to: second)
+        add([first, second, source])
+        let blocked = folder.appendingPathComponent("폴더 대신 파일")
+        try Data([1]).write(to: blocked)
+        model.settings.outputDirectory = blocked.path
+        model.queue.schedule(paths: [InputValidator.canonicalPath(first)], settings: model.settings)
+        model.settings.outputDirectory = folder.appendingPathComponent("잘못된 옵션").path
+        model.settings.options.outputFormat = "invalid"
+        model.queue.schedule(paths: [InputValidator.canonicalPath(second)], settings: model.settings)
+        let reserved = folder.appendingPathComponent("예약 PNG 결과")
+        model.settings.outputDirectory = reserved.path
+        model.settings.options.outputFormat = "png"
+        model.settings.options.pngCompression = 9
+        model.settings.options.metadata = "strip"
+        model.queue.schedule(paths: [InputValidator.canonicalPath(source)], settings: model.settings)
+        model.settings.outputDirectory = folder.appendingPathComponent("이후 변경 결과").path
+        model.settings.options.outputFormat = "jpeg"
+        model.startWaiting(); model.cancel()
+        guard await waitUntilIdle(), check("준비 오류 이후 예약 자동 실행", model.queue.items.map(\.status) == [.failed, .failed, .succeeded]
+            && model.queue.items.prefix(2).allSatisfy { $0.detail?.hasPrefix("invalid_request:") == true }) else { return false }
+        let canonicalSource = URL(fileURLWithPath: InputValidator.canonicalPath(source))
+        let destination = reserved.appendingPathComponent(canonicalSource.deletingPathExtension().lastPathComponent + ".png")
+        let reportedDestination = model.queue.items.last?.destination.map { InputValidator.canonicalPath(URL(fileURLWithPath: $0)) }
+        guard check("예약 옵션·저장 폴더 보존", reportedDestination == InputValidator.canonicalPath(destination)
+            && FileManager.default.fileExists(atPath: destination.path)
+            && CGImageSourceCreateWithURL(destination as CFURL, nil) != nil
+            && !FileManager.default.fileExists(atPath: model.settings.outputDirectory)
+            && model.message == "완료: 성공 1, 건너뜀 0, 실패 0") else { return false }
+        model.removeAll()
+
+        // 다음 독립 작업에 이전의 준비 거절 수가 누적되지 않는다.
+        add([source]); model.startWaiting()
+        guard await waitUntilIdle(), check("다음 작업 집계 초기화", model.queue.items.map(\.status) == [.succeeded]
+            && model.message == "완료: 성공 1, 건너뜀 0, 실패 0"),
+              check("합성 원본 보존", try Data(contentsOf: source) == original
+                && Data(contentsOf: first) == original && Data(contentsOf: second) == original) else { return false }
+        return true
+    } catch { fputs("작업 오류 복구 검증 실패: \(error.localizedDescription)\n", stderr); return false }
+}
+
 /// 합성 HEIC만 사용하여 설치된 번들의 worker와 프로토콜을 실제 변환까지 확인한다.
 func smokeTest() -> Int32 {
     guard fileThumbnailSmokeTest() else { return 1 }
@@ -694,6 +819,12 @@ final class SmokeState: @unchecked Sendable {
     }
 }
 
+if CommandLine.arguments.contains("--model-worker-smoke-test") {
+    MainActor.assumeIsolated {
+        _ = Task { exit(await modelWorkerRecoverySmokeTest() ? 0 : 1) }
+    }
+    RunLoop.main.run()
+}
 if CommandLine.arguments.contains("--smoke-test") {
     let result = smokeTest()
     if result != 0 { exit(result) }

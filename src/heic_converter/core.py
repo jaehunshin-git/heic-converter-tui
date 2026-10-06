@@ -33,6 +33,10 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _APPLE_HDR_GAIN_MAP = "urn:com:apple:photo:2020:aux:hdrgainmap"
 
 
+class OutputConflictError(FileExistsError):
+    """완성된 결과를 커밋할 때 목적지 파일이 이미 존재하는 경우입니다."""
+
+
 @dataclass(frozen=True)
 class ConversionResult:
     """파일 하나의 변환 결과입니다."""
@@ -129,7 +133,8 @@ def choose_destination(
     """
 
     reserved = reserved if reserved is not None else set()
-    if not proposed.exists() and proposed not in reserved:
+    # 끊어진 심볼릭 링크도 디렉터리 항목을 점유하므로 충돌로 처리한다.
+    if not (proposed.exists() or proposed.is_symlink()) and proposed not in reserved:
         reserved.add(proposed)
         return proposed
     if on_conflict == "skip":
@@ -143,7 +148,7 @@ def choose_destination(
     number = 2
     while True:
         candidate = proposed.with_name(f"{proposed.stem}-{number}{proposed.suffix}")
-        if not candidate.exists() and candidate not in reserved:
+        if not (candidate.exists() or candidate.is_symlink()) and candidate not in reserved:
             reserved.add(candidate)
             return candidate
         number += 1
@@ -260,7 +265,12 @@ def _atomic_write(
 ) -> None:
     """완성된 파일만 목적지에 나타나도록 같은 디렉터리의 임시 파일로 저장합니다."""
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    except FileExistsError as error:
+        raise NotADirectoryError(
+            errno.ENOTDIR, "출력 부모 경로는 디렉터리여야 합니다.", destination.parent,
+        ) from error
     temp_name: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -277,7 +287,12 @@ def _atomic_write(
             os.replace(temp_name, destination)
             temp_name = None
         else:
-            _commit_without_overwrite(temp_name, destination)
+            try:
+                _commit_without_overwrite(temp_name, destination)
+            except FileExistsError as error:
+                raise OutputConflictError(
+                    errno.EEXIST, os.strerror(errno.EEXIST), destination,
+                ) from error
             temp_name = None
         _fsync_directory(destination.parent)
     finally:
