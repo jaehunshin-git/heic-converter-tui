@@ -27,8 +27,8 @@ see [README.ko.md](README.ko.md).
 | Feature | Description |
 | --- | --- |
 | Menu bar app | Open a glass drop panel below the menu bar icon; keep it visible across focus changes and hide it without interrupting conversion or clipboard detection. |
-| File queue | Drop one or more HEIC files, choose Convert now or Add to queue, and inspect per-file results. Dropping never starts conversion automatically. |
-| Finder clipboard | Detect copied local file URLs in the background, or paste with the button or Command-V. Detection is optional and remembers your preference. |
+| File queue | Drop HEIC files or click the drop zone to select multiple files in Finder, then choose Convert now or Add to queue and inspect per-file results. Adding files never starts conversion automatically. |
+| Finder clipboard | Detect copied local file URLs in the background, or paste with Command-V. Detection is optional and remembers your preference. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
 | JPEG and PNG output | Configure JPEG quality or PNG compression level. |
@@ -118,10 +118,14 @@ after attempting to launch this app. Follow
 [Apple's instructions](https://support.apple.com/102445).
 DMG packaging does not bypass Gatekeeper.
 
-The drop zone explicitly invites dragging HEIC files and centers a compact Paste
-button. It shows hover, drag target, loading, accepted, and rejected feedback.
-Drop local `.heic` files, review the options, then choose **Convert now** or
-**Add to queue**. Queue items wait until you start conversion. Finder copies
+The panel header describes converting HEIC files to JPEG or PNG. Drag local `.heic` files
+onto the blue drop zone, or click it to open the standard Finder file picker and
+select multiple HEIC files. **Command-O** opens the same picker. The drop zone
+shows hover, drag target, loading, accepted, and rejected feedback.
+Dropped and selected files appear in the staged list. Review the options, then
+choose **Convert now** or **Add to queue**; neither dropping nor selecting files
+starts conversion automatically. Queue items wait until you start conversion.
+**Command-V** still pastes copied local HEIC files into the queue. Finder copies
 add accepted new files to the queue and reveal the panel below the menu bar icon
 without taking focus or starting conversion. Duplicate or rejected inputs, startup
 and re-enabled clipboard content do not trigger this reveal. Direct pastes add
@@ -173,7 +177,7 @@ and icon work is tracked separately in
 [issue #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5).
 Clipboard detection uses a 0.75-second poll and skips
 existing clipboard content on startup or re-enable. A denied access status stops
-automatic reading; use file drops or direct paste instead. The app does not modify
+automatic reading; use file drops or the Finder file picker instead. The app does not modify
 the clipboard or source files. Manual copying of converted results and moving
 results to Trash are planned in
 [issue #6](https://github.com/jaehunshin-git/heic-converter-tui/issues/6).

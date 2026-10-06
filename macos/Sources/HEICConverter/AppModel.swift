@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ConverterKit
+import UniformTypeIdentifiers
 
 @MainActor final class AppModel: ObservableObject {
     @Published var settings: AppSettings { didSet { settings.save(to: settingsStore) } }
@@ -8,7 +9,7 @@ import ConverterKit
     @Published var dropTargeted = false
     @Published var staged: [URL] = [] { didSet { pruneDuplicateNotices() } }
     @Published var notices: [InputRejection] = []
-    @Published var message = "HEIC 파일을 드롭하거나 Finder에서 복사하세요."
+    @Published var message = "HEIC 파일을 드롭하거나 클릭해 선택하세요."
     @Published var clipboardMessage: String?
     @Published var cancelling = false
     private let worker = WorkerClient()
@@ -54,6 +55,24 @@ import ConverterKit
         if gate.denied { clipboardMessage = "클립보드 접근이 거부되었습니다. 파일을 드롭하거나 직접 붙여넣으세요. 허용 후 감지를 다시 켜세요." }
     }
     func paste() { readClipboard(manual: true) }
+    /// 파일 선택도 드롭과 같은 확인 단계를 거치며 취소 시 목록을 변경하지 않는다.
+    func chooseFiles() -> Bool? {
+        let panel = NSOpenPanel()
+        panel.title = "HEIC 파일 선택"
+        panel.message = "변환할 HEIC 파일을 선택하세요. 여러 파일을 선택할 수 있습니다."
+        panel.prompt = "선택"
+        panel.allowedContentTypes = [.heic]
+        panel.allowsOtherFileTypes = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.resolvesAliases = false
+        guard panel.runModal() == .OK else { return nil }
+        let previousCount = staged.count
+        stage(panel.urls)
+        return staged.count > previousCount
+    }
     private func readClipboard(manual: Bool) {
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         if manual { gate.resume(changeCount: pasteboard.changeCount) }
