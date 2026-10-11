@@ -8,7 +8,7 @@ public enum PanelPlacement {
     public static let cornerRadius: CGFloat = 20
     public static let defaultSize = CGSize(width: 320, height: 520 + pointerHeight)
     public static let minimumSize = CGSize(width: 300, height: 520 + pointerHeight)
-    public static let emptyHeight: CGFloat = 360 + pointerHeight
+    public static let emptyHeight: CGFloat = 288 + pointerHeight
     public static let edgeMargin: CGFloat = 8
     public static let anchorGap: CGFloat = 3
 

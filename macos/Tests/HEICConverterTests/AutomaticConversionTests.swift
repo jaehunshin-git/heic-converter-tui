@@ -34,9 +34,10 @@ final class AutomaticConversionTests: XCTestCase {
         let worker = FakeWorker()
         let model: AppModel
         let source: URL
-        init() throws {
+        init(settings: AppSettings? = nil) throws {
             board = NSPasteboard(name: .init(name))
             defaults = UserDefaults(suiteName: name)!
+            settings?.save(to: defaults)
             root = URL(fileURLWithPath: InputValidator.canonicalPath(FileManager.default.temporaryDirectory), isDirectory: true).appendingPathComponent(name)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             source = root.appendingPathComponent("원본.heic")
@@ -350,18 +351,103 @@ final class AutomaticConversionTests: XCTestCase {
         let f = try Fixture(); defer { f.close() }
         f.copy([f.source]); let request = try f.prepare(); try f.complete(request)
         let count = f.worker.requests.count
-        f.model.pollClipboard(); f.model.setClipboard(false); f.model.setClipboard(true)
+        let generation = f.board.changeCount
+        let result = try XCTUnwrap(f.model.clipboardFiles.first?.url)
+        let resultData = try Data(contentsOf: result)
+        let completionMessage = f.model.message
+        f.model.pollClipboard(); f.model.setClipboard(false)
+        XCTAssertFalse(f.model.clipboardEnabled)
+        XCTAssertEqual(f.board.changeCount, generation)
+        XCTAssertEqual(f.model.clipboardFiles.first?.status, .completed)
+        XCTAssertEqual(f.model.clipboardFiles.first?.url, result)
+        XCTAssertEqual(try Data(contentsOf: result), resultData)
+        f.model.setClipboard(true)
         XCTAssertEqual(f.worker.requests.count, count)
         XCTAssertEqual(f.model.clipboardFiles.first?.status, .completed)
+        XCTAssertEqual(f.model.message, completionMessage)
     }
 
-    @MainActor func testDisablePersistsAndEnableProcessesCurrentHEIC() throws {
+    @MainActor func testPauseDoesNotPersistAndResumeProcessesCurrentHEIC() throws {
         let f = try Fixture(); defer { f.close() }
+        f.model.settings.options.jpegQuality = 75
+        let savedData = try XCTUnwrap(f.defaults.data(forKey: "converter.settings"))
         f.model.setClipboard(false); f.copy([f.source])
+        XCTAssertFalse(f.model.clipboardEnabled)
         XCTAssertTrue(f.worker.requests.isEmpty)
-        XCTAssertFalse(AppSettings.load(from: f.defaults).clipboardEnabled)
+        XCTAssertEqual(f.model.clipboardFiles.first?.status, .ready)
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), savedData)
+        XCTAssertTrue(AppSettings.load(from: f.defaults).clipboardEnabled)
         f.model.setClipboard(true)
+        XCTAssertTrue(f.model.clipboardEnabled)
         XCTAssertEqual(f.worker.requests.last?.command, "prepare")
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), savedData)
+    }
+
+    @MainActor func testLegacyDisabledSettingIsIgnoredAndConversionOptionsArePreserved() throws {
+        var legacy = AppSettings()
+        legacy.clipboardEnabled = false
+        legacy.options.jpegQuality = 75
+        legacy.options.pngCompression = 4
+        legacy.options.metadata = "preserve"
+        let f = try Fixture(settings: legacy); defer { f.close() }
+        let savedData = try XCTUnwrap(f.defaults.data(forKey: "converter.settings"))
+
+        XCTAssertTrue(f.model.clipboardEnabled)
+        XCTAssertFalse(f.model.settings.clipboardEnabled)
+        XCTAssertEqual(f.model.settings.options, legacy.options)
+        f.copy([f.source])
+        let request = try f.prepare()
+        XCTAssertEqual(request.options, legacy.options)
+        XCTAssertEqual(f.worker.requests.last?.command, "run")
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), savedData)
+
+        f.model.setClipboard(false)
+        XCTAssertFalse(f.model.clipboardEnabled)
+        XCTAssertEqual(f.worker.requests.last?.command, "cancel")
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), savedData)
+        f.model.settings.options.jpegQuality = 80
+        var expected = legacy
+        expected.options.jpegQuality = 80
+        XCTAssertEqual(AppSettings.load(from: f.defaults), expected)
+        let updatedData = try XCTUnwrap(f.defaults.data(forKey: "converter.settings"))
+        XCTAssertNotEqual(updatedData, savedData)
+        f.model.setClipboard(true)
+        XCTAssertTrue(f.model.clipboardEnabled)
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), updatedData)
+    }
+
+    @MainActor func testNewModelStartsEnabledAfterPreviousExecutionWasPaused() throws {
+        let f = try Fixture(); defer { f.close() }
+        f.model.settings.options.jpegQuality = 75
+        f.model.settings.options.metadata = "preserve"
+        let options = f.model.settings.options
+        let savedData = try XCTUnwrap(f.defaults.data(forKey: "converter.settings"))
+        f.model.setClipboard(false)
+        f.copy([f.source])
+        let generation = f.board.changeCount
+        XCTAssertFalse(f.model.clipboardEnabled)
+        XCTAssertTrue(f.worker.requests.isEmpty)
+        f.model.shutdown()
+        XCTAssertTrue(f.worker.stopped)
+
+        let nextWorker = FakeWorker()
+        let nextModel = AppModel(pasteboard: f.board, defaults: f.defaults,
+                                 clipboardRoot: f.root.appendingPathComponent("managed"), worker: nextWorker)
+        defer { nextModel.shutdown() }
+        XCTAssertTrue(nextModel.clipboardEnabled)
+        XCTAssertEqual(nextModel.settings.options, options)
+        XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), savedData)
+        XCTAssertEqual(f.board.changeCount, generation)
+        XCTAssertTrue(nextModel.active)
+        let request = try XCTUnwrap(nextWorker.requests.last)
+        XCTAssertEqual(request.command, "prepare")
+        XCTAssertEqual(request.files?.count, 1)
+        let stagedInput = try XCTUnwrap(request.files?.first)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: stagedInput)), try Data(contentsOf: f.source))
+        XCTAssertEqual(request.options, options)
+        try nextWorker.emit("prepared", request: request,
+                            extra: ["files": request.files!, "rejected": [], "total": request.files!.count])
+        XCTAssertEqual(nextWorker.requests.last?.command, "run")
     }
 
     @MainActor func testPreparationRejectionDoesNotRunOrPublish() throws {

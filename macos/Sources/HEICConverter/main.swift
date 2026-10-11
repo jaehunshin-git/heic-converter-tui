@@ -78,8 +78,12 @@ final class ClipboardPanel: NSPanel {
             NotificationCenter.default.addObserver(self, selector: #selector(reanchorVisiblePanel),
                                                   name: NSView.frameDidChangeNotification, object: button)
         }
-        subscription = model.$settings.map(\.clipboardEnabled).removeDuplicates().sink { [weak self] enabled in
-            self?.statusItem.button?.toolTip = enabled ? "HEIC 자동 변환 켜짐" : "HEIC 자동 변환 꺼짐"
+        subscription = model.$clipboardEnabled.removeDuplicates().sink { [weak self] enabled in
+            guard let button = self?.statusItem.button else { return }
+            button.image = PhotoClipboardIconGeometry.makeTemplateImage(isPaused: !enabled)
+            button.toolTip = enabled ? "HEIC 자동 변환 중 · 오른쪽 클릭: 일시정지·설정·종료"
+                : "자동 변환 일시정지됨 · 오른쪽 클릭: 다시 시작"
+            button.setAccessibilityLabel(enabled ? "HEIC Converter · 자동 변환 활성화" : "HEIC Converter · 자동 변환 일시정지됨")
         }
         clipboardSubscription = model.$clipboardFiles.combineLatest(model.$message).sink { [weak self] _ in
             self?.scheduleClipboardLayout()
@@ -112,6 +116,11 @@ final class ClipboardPanel: NSPanel {
 
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
+        let pause = NSMenuItem(title: model.clipboardEnabled ? "자동 변환 일시정지" : "자동 변환 다시 시작",
+                               action: #selector(toggleAutomaticConversion), keyEquivalent: "")
+        pause.target = self
+        menu.addItem(pause)
+        menu.addItem(.separator())
         let settings = NSMenuItem(title: "설정 열기…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -119,6 +128,10 @@ final class ClipboardPanel: NSPanel {
         let quit = NSMenuItem(title: "앱 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp; menu.addItem(quit)
         return menu
+    }
+
+    @objc private func toggleAutomaticConversion() {
+        model.setClipboard(!model.clipboardEnabled)
     }
 
     @objc private func openSettings() {
@@ -439,11 +452,19 @@ final class ClipboardPanel: NSPanel {
             && panel.frame.maxY == populatedFrame.maxY)
         togglePanel(); check("좌클릭 숨김", !panel.isVisible)
         let menu = makeStatusMenu()
-        check("우클릭 설정과 종료", menu.items.map(\.title) == ["설정 열기…", "", "앱 종료"]
-            && menu.items[2].target === NSApp)
+        check("우클릭 일시정지·설정·종료", menu.items.map(\.title) == ["자동 변환 일시정지", "", "설정 열기…", "", "앱 종료"]
+            && menu.items[4].target === NSApp)
+        menu.performActionForItem(at: 0)
+        check("메뉴에서 자동 변환 일시정지", !model.clipboardEnabled
+            && statusItem.button?.image?.accessibilityDescription == "HEIC Converter — 자동 변환 일시정지됨")
+        let pausedMenu = makeStatusMenu()
+        check("일시정지 메뉴는 다시 시작 표시", pausedMenu.items[0].title == "자동 변환 다시 시작")
+        pausedMenu.performActionForItem(at: 0)
+        check("메뉴에서 자동 변환 다시 시작", model.clipboardEnabled
+            && statusItem.button?.image?.accessibilityDescription == PhotoClipboardIconGeometry.accessibilityDescription)
         togglePanel()
         check("설정 전 패널 포커스", await waitForFocus(panel))
-        menu.performActionForItem(at: 0)
+        menu.performActionForItem(at: 2)
         if let settingsWindow {
             check("별도 설정 창으로 포커스 이동 시 패널 닫힘",
                   await waitForFocus(settingsWindow) && settingsWindow.isVisible && !panel.isVisible)

@@ -39,6 +39,8 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
 
 @MainActor final class AppModel: ObservableObject {
     @Published var settings: AppSettings { didSet { settings.save(to: settingsStore) } }
+    // 자동 변환은 실행마다 켜진다. 저장된 legacy 설정은 실행 상태에 사용하지 않는다.
+    @Published private(set) var clipboardEnabled = true
     @Published private(set) var clipboardFiles: [ClipboardDisplayFile] = []
     @Published private(set) var message = "HEIC를 복사하면 자동으로 변환합니다."
     @Published private(set) var active = false
@@ -90,14 +92,18 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
 
     func setClipboard(_ enabled: Bool) {
         guard !terminating else { return }
-        settings.clipboardEnabled = enabled
+        clipboardEnabled = enabled
         if !enabled {
             conversionNotice = nil
             pending = nil
             invalidateWork()
             updateCurrent(status: .ready, detail: nil)
-            message = "자동 변환 꺼짐 · 이미 준비한 결과는 유지합니다."
+            message = "자동 변환 일시정지됨 · 이미 준비한 결과는 유지합니다."
         } else {
+            if publishedChange == pasteboard.changeCount {
+                let completedCount = clipboardFiles.filter { $0.status == .completed }.count
+                message = "\(completedCount)개 변환 완료 · ⌘V로 붙여넣으세요."
+            }
             if publishedChange != pasteboard.changeCount { observedChange = nil }
             pollClipboard()
             if publishedChange != pasteboard.changeCount, let current,
@@ -137,8 +143,8 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
                     status: $0.isVideo ? .unsupported : .ready,
                     detail: $0.isVideo ? "동영상 · 변환 제외 · 클립보드 유지" : nil, isVideo: $0.isVideo)
             }
-            if !settings.clipboardEnabled {
-                message = "자동 변환 꺼짐"
+            if !clipboardEnabled {
+                message = "자동 변환 일시정지됨"
             } else if snapshot.targets.isEmpty {
                 message = snapshot.files.contains(where: \.isVideo)
                     ? "동영상은 변환하지 않습니다 · 클립보드를 유지합니다."
@@ -161,7 +167,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
             clipboardFiles = preview
             message = "지원하지 않는 클립보드 · \(error.localizedDescription)"
             let heicCount = previewFiles.filter(\.isHEIC).count
-            if settings.clipboardEnabled, heicCount > 0 {
+            if clipboardEnabled, heicCount > 0 {
                 conversionNotice = ClipboardConversionNotice(id: UUID(), sourceChangeCount: count,
                     copiedFileCount: previewFiles.count, heicCount: heicCount, phase: .failed,
                     completedCount: 0, detail: "HEIC를 읽을 수 없습니다. 전체 원본을 유지했습니다.")
@@ -183,7 +189,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
     }
 
     private func startPending() {
-        guard !terminating, !stopping, work == nil, settings.clipboardEnabled,
+        guard !terminating, !stopping, work == nil, clipboardEnabled,
               let snapshot = pending else { return }
         pending = nil
         guard snapshot.changeCount == pasteboard.changeCount, !snapshot.targets.isEmpty else { return }
@@ -240,7 +246,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
                 sendCancel()
                 return
             }
-            if currentWork.invalidated || !settings.clipboardEnabled || pasteboard.changeCount != currentWork.snapshot.changeCount {
+            if currentWork.invalidated || !clipboardEnabled || pasteboard.changeCount != currentWork.snapshot.changeCount {
                 work?.invalidated = true
                 sendCancel()
             } else {
@@ -273,7 +279,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
         let relevant = pasteboard.changeCount == work.snapshot.changeCount && current?.changeCount == work.snapshot.changeCount
         let allSucceeded = event.event == "completed" && !work.failed && event.failed == 0 && event.skipped == 0
             && event.succeeded == work.inputPaths.count && work.results.count == work.inputPaths.count
-        if relevant, !work.invalidated, settings.clipboardEnabled, allSucceeded {
+        if relevant, !work.invalidated, clipboardEnabled, allSucceeded {
             do {
                 let results = try work.inputPaths.map { path -> URL in
                     guard let result = work.results[path] else { throw WorkerFailure.invalidEvent }
@@ -300,7 +306,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
                 if store.ownedChangeCount == pasteboard.changeCount { observedChange = pasteboard.changeCount }
             }
         } else {
-            if relevant, settings.clipboardEnabled, !work.invalidated {
+            if relevant, clipboardEnabled, !work.invalidated {
                 updateCurrent(status: .failed, detail: "전체 원본을 유지했습니다.")
                 message = "변환 실패 · 부분 결과를 게시하지 않고 전체 원본을 유지했습니다."
                 notify(work.snapshot, phase: .failed, detail: "변환하지 못했습니다. 전체 원본을 유지했습니다.")
@@ -360,7 +366,7 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
 
     private func notify(_ snapshot: ClipboardSnapshot, phase: ClipboardConversionNotice.Phase,
                         completedCount: Int = 0, detail: String? = nil) {
-        guard !terminating, settings.clipboardEnabled, !snapshot.targets.isEmpty,
+        guard !terminating, clipboardEnabled, !snapshot.targets.isEmpty,
               current?.changeCount == snapshot.changeCount else { return }
         let boardIsCurrent = pasteboard.changeCount == snapshot.changeCount
         let ownPublication = publishedChange == pasteboard.changeCount
