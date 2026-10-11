@@ -386,9 +386,12 @@ def _save_hdr_png(source: Path, destination: Path, metadata_kwargs: dict[str, ob
     image_source = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(str(source)), None)
     if image_source is None:
         raise ValueError(f"HEIC 파일을 읽지 못했습니다: {source}")
+    primary_index = Quartz.CGImageSourceGetPrimaryImageIndex(image_source)
+    if not 0 <= primary_index < Quartz.CGImageSourceGetCount(image_source):
+        raise ValueError(f"HEIC의 대표 이미지 인덱스가 유효하지 않습니다: {source}")
     hdr = Quartz.CGImageSourceCreateImageAtIndex(
         image_source,
-        0,
+        primary_index,
         {Quartz.kCGImageSourceDecodeRequest: Quartz.kCGImageSourceDecodeToHDR},
     )
     if hdr is None:
