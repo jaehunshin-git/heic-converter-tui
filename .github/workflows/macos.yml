@@ -2,8 +2,8 @@ name: macOS 앱 및 Python 검증
 
 on:
   push:
-    branches: [main, feat/2-macos-menu-bar-app]
-    tags: [v0.3.0]
+    branches: [main, 'feat/**', 'feat-*']
+    tags: ['v*', 'macos-v*']
   pull_request:
   workflow_dispatch:
 
@@ -42,6 +42,8 @@ jobs:
           swift build --package-path macos
           swift test --package-path macos
       - name: 앱과 DMG 조립 및 설치본 검증
+        # GUI 준비 또는 이미지 attach/verify가 정지해도 job을 무기한 점유하지 않는다.
+        timeout-minutes: 20
         run: bash packaging/macos/build.sh
       - name: Python 배포 파일 빌드와 허용 목록 검증
         run: |
@@ -50,10 +52,10 @@ jobs:
       - name: 검증한 산출물 업로드
         uses: actions/upload-artifact@v4
         with:
-          name: heic-converter-0.3.0-${{ matrix.os }}-arm64
+          name: heic-converter-${{ matrix.os }}-arm64
           path: |
-            dist/macos/HEIC-Converter-0.3.0-arm64.dmg
-            dist/macos/HEIC-Converter-0.3.0-arm64.dmg.sha256
+            dist/macos/HEIC-Converter-*-arm64.dmg
+            dist/macos/HEIC-Converter-*-arm64.dmg.sha256
             dist/*.whl
             dist/*.tar.gz
           if-no-files-found: error

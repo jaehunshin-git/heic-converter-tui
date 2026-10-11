@@ -4,7 +4,6 @@ import plistlib
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 from sign_app import is_macho
@@ -18,14 +17,16 @@ def output(*arguments: str) -> str:
 def validate(app: Path) -> None:
     app = app.resolve()
     root = Path(__file__).resolve().parents[2]
-    version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    # 앱 버전은 Python/PyPI 버전과 독립적으로 관리한다.
+    source_info = plistlib.loads((root / "packaging/macos/Info.plist").read_bytes())
+    version = source_info["CFBundleShortVersionString"]
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleIdentifier"] == "io.github.jaehunshin-git.heic-converter"
     assert (
         info["CFBundleShortVersionString"]
         == info["CFBundleVersion"]
         == version
-        == "0.3.0"
+        == source_info["CFBundleVersion"]
     )
     assert info["LSMinimumSystemVersion"] == "15.0" and info["LSUIElement"] is True
     allowed = {"Info.plist", "PkgInfo", "MacOS", "Resources", "_CodeSignature"}

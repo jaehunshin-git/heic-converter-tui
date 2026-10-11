@@ -2,6 +2,8 @@
 
 import importlib.util
 import io
+import os
+import subprocess
 import sys
 import tarfile
 import zipfile
@@ -157,3 +159,137 @@ def test_build_instructions_use_absolute_url_for_excluded_sdist_docs(name):
         "https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md"
         in readme
     )
+
+
+@pytest.fixture
+def macos_build(tmp_path):
+    """실제 산출물은 건드리지 않고 전체 셸 흐름과 실패 중단을 실행한다."""
+    root = tmp_path / "공백 있는 저장소"
+    packaging = root / "packaging/macos"
+    packaging.mkdir(parents=True)
+    source = (ROOT / "packaging/macos/build.sh").read_text()
+    # 절대 경로의 macOS 도구도 격리된 가짜 실행 파일로 대체한다.
+    for command in ("open", "pgrep"):
+        source = source.replace(f"/usr/bin/{command}", command)
+    source = source.replace("/usr/libexec/PlistBuddy", "PlistBuddy")
+    (packaging / "build.sh").write_text(source)
+    (packaging / "Info.plist").write_text("fixture")
+    (root / "LICENSE").write_text("fixture")
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    log = tmp_path / "commands.log"
+
+    def command(name, body):
+        path = binary / name
+        path.write_text(f"#!/bin/bash\nset -eu\n{body}\n")
+        path.chmod(0o755)
+
+    command("uname", 'if [[ "$1" == -s ]]; then echo Darwin; else echo arm64; fi')
+    command("stat", 'id -u')
+    command("launchctl", 'exit "${GUI_STATUS:-0}"')
+    command("open", 'echo "Finder open" >> "$BUILD_TEST_LOG"')
+    command("pgrep", 'echo "Finder ready" >> "$BUILD_TEST_LOG"')
+    command("uv", ':')
+    command("sw_vers", ':')
+    command("PlistBuddy", 'echo 0.3.0')
+    command("swift", 'echo "$BUILD_TEST_SWIFT"')
+    command("iconutil", 'touch "${@: -1}"')
+    command(
+        "hdiutil",
+        'printf "hdiutil %s\\n" "$*" >> "$BUILD_TEST_LOG"\n'
+        'if [[ "${DMG_STATUS:-0}" != 0 ]]; then exit "$DMG_STATUS"; fi\n'
+        'touch "${@: -1}"',
+    )
+    swift = tmp_path / "swift-bin"
+    swift.mkdir()
+    app = swift / "HEICConverter"
+    app.write_text('#!/bin/bash\necho "app smoke $*" >> "$BUILD_TEST_LOG"\n')
+    app.chmod(0o755)
+    worker = root / "build/macos/frozen/worker"
+    worker.mkdir(parents=True)
+    (worker / "heic-worker").write_text("fixture")
+    environment = root / ".venv-app-build/bin"
+    environment.mkdir(parents=True)
+    python = environment / "python"
+    python.write_text(
+        '#!/bin/bash\nset -eu\n'
+        'if [[ "$1" == -c || "$1" == -m ]]; then exit 0; fi\n'
+        'if [[ "$1" == packaging/* ]]; then\n'
+        '  echo "$1" >> "$BUILD_TEST_LOG"; exit 0\nfi\n'
+        'exec "$BUILD_TEST_PYTHON" "$@"\n'
+    )
+    python.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{binary}:/usr/bin:/bin",
+        "BUILD_TEST_LOG": str(log),
+        "BUILD_TEST_SWIFT": str(swift),
+        "BUILD_TEST_PYTHON": sys.executable,
+    }
+    return root, env, log
+
+
+@pytest.mark.parametrize("dmg_status", [0, 9])
+def test_full_build_prepares_gui_and_creates_hfs_dmg(macos_build, dmg_status):
+    root, env, log = macos_build
+    preserved = []
+    for directory in ("build/macos", "dist/macos", "input", "output"):
+        path = root / directory / "keep.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("preserve")
+        preserved.append(path)
+    result = subprocess.run(
+        ["/bin/bash", str(root / "packaging/macos/build.sh")],
+        env={**env, "DMG_STATUS": str(dmg_status)},
+        capture_output=True, text=True, timeout=15,
+    )
+    assert (result.returncode == 0) is (dmg_status == 0), result.stderr
+    assert all(path.read_text() == "preserve" for path in preserved)
+    commands = log.read_text()
+    assert commands.index("Finder ready") < commands.index("app smoke --smoke-test")
+    assert "-fs HFS+ -format UDZO" in commands
+    checksum = root / "dist/macos/HEIC-Converter-0.3.0-arm64.dmg.sha256"
+    # 성공 fixture에서는 실제 hdiutil 대신 빈 이미지를 해시한다.
+    if dmg_status == 0:
+        assert "packaging/macos/validate_dmg.py" in commands
+        assert checksum.exists()
+    else:
+        assert "packaging/macos/validate_dmg.py" not in commands
+        assert not checksum.exists()
+
+
+def test_build_stops_without_gui_before_build_or_finder(macos_build):
+    root, env, log = macos_build
+    result = subprocess.run(
+        ["/bin/bash", str(root / "packaging/macos/build.sh")],
+        env={**env, "GUI_STATUS": "1"},
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode != 0
+    assert "GUI 세션" in result.stderr
+    assert not log.exists()
+
+
+@pytest.mark.parametrize(
+    "directory", ["build", "build/macos", "dist", "dist/macos", ".venv-app-build"]
+)
+def test_build_rejects_linked_output_parent_without_deleting(macos_build, directory):
+    root, env, log = macos_build
+    target = root / directory
+    # fixture의 기존 경로는 옮겨 두고 외부 디렉터리로 연결한다.
+    if target.exists():
+        target.rename(target.with_name(target.name + "-original"))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    outside = root.parent / "external"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("preserve")
+    target.symlink_to(outside, target_is_directory=True)
+    result = subprocess.run(
+        ["/bin/bash", str(root / "packaging/macos/build.sh")],
+        env=env, capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode != 0
+    assert "링크가 아닌 디렉터리" in result.stderr
+    assert sentinel.read_text() == "preserve"
+    assert not log.exists()

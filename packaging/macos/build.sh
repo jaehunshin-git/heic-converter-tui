@@ -13,11 +13,39 @@ BUILD="$ROOT/build/macos"
 DIST="$ROOT/dist/macos"
 APP="$DIST/HEIC Converter.app"
 ENVIRONMENT="$ROOT/.venv-app-build"
+# 상위 링크를 따라 저장소 밖의 산출물을 지우거나 덮어쓰지 않는다.
+for directory in "$ROOT/build" "$BUILD" "$ROOT/dist" "$DIST" "$ENVIRONMENT"; do
+    if [[ -L "$directory" || ( -e "$directory" && ! -d "$directory" ) ]]; then
+        echo "빌드 경로는 링크가 아닌 디렉터리여야 합니다: $directory" >&2
+        exit 1
+    fi
+done
+# 패널 smoke는 WindowServer와 포커스를 넘겨받을 외부 앱이 필요하다.
+if [[ "$(stat -f '%u' /dev/console)" != "$(id -u)" ]] || ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+    echo '패널 smoke에는 현재 사용자의 로그인된 GUI 세션이 필요합니다.' >&2
+    exit 1
+fi
 uv python install "$PYTHON_VERSION"
 uv venv --allow-existing --python "$PYTHON_VERSION" "$ENVIRONMENT"
 uv pip sync --python "$ENVIRONMENT/bin/python" --require-hashes packaging/macos/requirements.lock
 PYTHON="$ENVIRONMENT/bin/python"
 "$PYTHON" -c 'import platform, sys; assert platform.machine() == "arm64"; assert sys.version_info[:3] == (3, 12, 12)'
+# Apple Events나 접근성 권한 없이 Finder를 시작해 포커스 대상을 확보한다.
+"$PYTHON" - <<'PY'
+import os
+import subprocess
+import time
+
+subprocess.run(["/usr/bin/open", "-a", "Finder"], check=True, timeout=15)
+deadline = time.monotonic() + 15
+while subprocess.run(
+    ["/usr/bin/pgrep", "-u", str(os.getuid()), "-x", "Finder"],
+    stdout=subprocess.DEVNULL, check=False, timeout=5,
+).returncode != 0:
+    if time.monotonic() >= deadline:
+        raise RuntimeError("패널 smoke의 포커스 대상 Finder가 실행되지 않았습니다.")
+    time.sleep(0.2)
+PY
 mkdir -p "$BUILD" "$DIST"
 "$PYTHON" -m PyInstaller --noconfirm --clean --workpath "$BUILD/pyinstaller" --distpath "$BUILD/frozen" packaging/macos/worker.spec
 swift build --package-path macos --configuration release --arch arm64
@@ -37,18 +65,38 @@ iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.ic
 "$PYTHON" packaging/macos/sign_app.py "$APP"
 "$PYTHON" packaging/macos/validate_app.py "$APP"
 "$PYTHON" packaging/macos/smoke_worker.py "$APP/Contents/Resources/worker/heic-worker"
-"$APP/Contents/MacOS/HEICConverter" --smoke-test
+"$PYTHON" - "$APP/Contents/MacOS/HEICConverter" <<'PY'
+import subprocess
+import sys
+
+subprocess.run([sys.argv[1], "--smoke-test"], check=True, timeout=90)
+PY
 STAGING="$BUILD/dmg-root"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/HEIC Converter.app"
 ln -s /Applications "$STAGING/Applications"
-DMG="$DIST/HEIC-Converter-0.3.0-arm64.dmg"
+APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/macos/Info.plist)"
+if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "잘못된 앱 버전: $APP_VERSION" >&2
+    exit 1
+fi
+DMG="$DIST/HEIC-Converter-$APP_VERSION-arm64.dmg"
 rm -f "$DMG"
 echo 'DMG 생성 환경:'
 sw_vers
 uname -m
-hdiutil create -verbose -volname 'HEIC Converter' -srcfolder "$STAGING" -format UDZO "$DMG"
+# APFS 생성 정지를 피하고, hdiutil이 멈추면 체크섬/설치 검증으로 진행하지 않는다.
+"$PYTHON" - "$STAGING" "$DMG" <<'PY'
+import subprocess
+import sys
+
+subprocess.run(
+    ["hdiutil", "create", "-verbose", "-volname", "HEIC Converter",
+     "-srcfolder", sys.argv[1], "-fs", "HFS+", "-format", "UDZO", sys.argv[2]],
+    check=True, timeout=300,
+)
+PY
 (cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 "$PYTHON" packaging/macos/validate_dmg.py "$DMG"
 echo "검증 완료: $DMG"
