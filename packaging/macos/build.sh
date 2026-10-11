@@ -45,7 +45,10 @@ cp -R "$APP" "$STAGING/HEIC Converter.app"
 ln -s /Applications "$STAGING/Applications"
 DMG="$DIST/HEIC-Converter-0.3.0-arm64.dmg"
 rm -f "$DMG"
-hdiutil create -quiet -volname 'HEIC Converter' -srcfolder "$STAGING" -format UDZO "$DMG"
+echo 'DMG 생성 환경:'
+sw_vers
+uname -m
+hdiutil create -verbose -volname 'HEIC Converter' -srcfolder "$STAGING" -format UDZO "$DMG"
 (cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 "$PYTHON" packaging/macos/validate_dmg.py "$DMG"
 echo "검증 완료: $DMG"

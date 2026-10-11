@@ -57,6 +57,21 @@ DMG는 앱 하나와 `/Applications` 바로가기로 구성한다. `validate_dmg
 읽기 전용으로 마운트하고 별도 임시 설치 위치에 복사한 앱에서 worker 및 앱 검증을
 반복한다. 마운트는 검증 후 해제하고 체크섬을 확인한다.
 
+DMG 생성은 OS 버전·빌드 번호·아키텍처와 `hdiutil create -verbose` 출력을
+기록한다. 검증은 파일 경로·크기·예상/실제 SHA-256을 먼저 기록한 뒤
+`hdiutil verify -verbose`로 이미지 내부 체크섬을 검사한다. verify·attach·detach의
+명령, 종료 코드, stdout과 stderr를 로그에 남기며 attach의 원본 stdout은
+별도로 plist 파싱에 사용한다. 외부 체크섬이나 hdiutil 검증 실패 시 즉시 중단하며
+자동 재시도하거나 설치 검증으로 우회하지 않는다.
+
+2026-10-07 KST의 [push 실행 37491932847](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37491932847)은
+macOS 26의 `hdiutil verify -quiet`에서 exit 1로 실패했다. 같은 HEAD
+`fd07bb1`의 [PR 실행 37491939634](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37491939634)는
+두 OS에서 성공했다. macOS 26.6.2와 runner 이미지 버전은 같지만 PR 실행은
+GitHub의 임시 merge 커밋을 체크아웃했다. 기존 quiet 로그에는 구체적인 실패 사유가
+없으므로 이미지 손상이나 runner 상태 문제로 단정할 수 없다. 위 변경은 실패 원인을
+진단할 근거를 보존하는 개선이며, 해당 CI 실패가 재발하지 않는다는 검증은 아니다.
+
 ```bash
 cd dist/macos
 shasum -a 256 -c HEIC-Converter-0.3.0-arm64.dmg.sha256
