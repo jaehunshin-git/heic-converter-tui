@@ -50,3 +50,28 @@ DMG를 열고 HEIC Converter를 Applications로 드래그한다. 첫 실행이 �
 `.github/workflows/macos.yml`은 Apple Silicon `macos-15`와 `macos-26`에서 Python 검사, Swift 검사, 앱/worker/DMG 설치본 실행과 Python 배포 파일 검증 후 CI 아티팩트를 업로드한다. PR에서 릴리스를 게시하거나 main에 머지하지 않는다. 앱 버전은 `Info.plist`, Python 버전은 `pyproject.toml`에서 독립적으로 관리한다. 배포 담당자는 앱 전용 `macos-v<앱 버전>` 태그의 검증한 DMG·체크섬을 GitHub Releases에 게시한다. Python 릴리스는 별도의 `v<Python 버전>` 태그와 wheel·sdist로 PyPI에 게시하며 앱 전용 변경은 PyPI에 업로드하지 않는다. 이미 게시된 PyPI 메타데이터를 덮어쓰지 않는다.
 
 자동 smoke 검증은 설치한 worker의 실제 변환과 앱의 프로토콜 연결을 확인한다. 이름 있는 pasteboard에서 자동 변환·혼합 항목 보존·부분 실패·끄기·정상 종료 복구와 패널/설정 창도 smoke로 확인한다. Photos·Finder·카카오톡의 실제 붙여넣기와 접근 권한 검증은 별도로 수행한다. 로컬 OS에서 성공한 결과를 macOS 15 실기 검증으로 기록하지 않는다.
+
+## 이슈 #7 후속 검증 범위
+
+[PR #9 준비 기록](../../docs/macos-issue7-pr-readiness.md)은 2026-10-11 당시의 결과와
+미검증 항목을 보존한다. 당시 Python 코어를 수정하지 않았다는 범위는 그 기록에 한정한다.
+현재 후속 범위에는 Photos 입력 보호와 Python 코어의 네이티브 HDR 대표 이미지 선택
+수정이 포함되며 CLI/TUI와 기존 SDR fallback 정책, PyPI 버전 0.3.0은 유지한다.
+
+Photos 자산 참조 메타데이터(`com.apple.photos.object-reference.asset`)와
+`.photoslibrary` 내부 파일 URL이 함께 있는 입력은 정상 종료 후
+전체 표현의 복구를 보장할 수 없어 지원하지 않는다. raw HEIC가 있어도 전체 입력을
+거절하며 보관함 파일을 조회하거나 썸네일로 열지 않는다. 보관함 URL 없는 raw HEIC
+단독 입력은 계속 지원한다. 파일 약속은 공급자에게 표현 데이터를 요청하기 전에
+전체 항목의 타입 검사로 거절한다.
+
+사용자가 미다운로드로 지정한 실제 iCloud 사진의 드래그에서는 파일 약속과
+`public.jpeg`, 일반 복사에서는 HEIC 없는 JPEG raw를 관찰했다. 드래그 타입 관찰은
+공급자 요청 없이 수행했으며 다운로드 상태를 독립적으로 검증한 결과가 아니다.
+일반 복사 JPEG는 앱 실행·정상 종료 후 전체 표현의 타입·바이트·세대 보존을 확인했다.
+
+소스 회귀 테스트는 실제 생성한 합성 다중 HEIC의 대표 인덱스가 1임을 확인하고
+`CGImageSourceGetPrimaryImageIndex`에 따른 16비트·PQ HDR PNG 및 메타데이터 정책을
+검증한다. 이 결과를 기존 앱/DMG의 동일 조건 검증이나 새 릴리스로 간주하지 않는다.
+최신 테스트 수, 앱/DMG 후속 검증과 카카오톡 실기 결과는
+[남은 검증 후속 기록](../../docs/macos-issue7-remaining-validation.md)을 따른다.
