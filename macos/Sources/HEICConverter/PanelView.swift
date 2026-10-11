@@ -17,14 +17,13 @@ struct PanelView: View {
         VStack(spacing: 0) {
             header.padding(14)
             Divider().padding(.horizontal, 14)
-            clipboardToggle.padding(14)
             HStack {
                 Text("현재 클립보드").font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("\(model.clipboardFiles.count)개").font(.caption).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
-            .padding(.horizontal, 14).padding(.bottom, 8)
+            .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 8)
             if model.clipboardFiles.isEmpty {
                 emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if measuresContent {
@@ -88,34 +87,11 @@ struct PanelView: View {
             }
             .buttonStyle(NeutralCloseButtonStyle())
             .accessibilityLabel("패널 숨기기")
-            .help("패널 숨기기 · 자동 변환은 계속됩니다")
+            .help("패널 숨기기 · 앱은 계속 실행됩니다")
             .focused($closeFocused).focusEffectDisabled()
             .overlay(Circle().strokeBorder(Color.primary.opacity(closeFocused ? 0.45 : 0), lineWidth: 1.5).allowsHitTesting(false))
             .keyboardShortcut(.escape, modifiers: [])
         }
-    }
-
-    private var clipboardToggle: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 16) {
-                Text("클립보드 자동 변환").font(.headline)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
-                Toggle("클립보드 자동 변환", isOn: Binding(
-                    get: { model.settings.clipboardEnabled },
-                    set: { model.setClipboard($0) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .fixedSize()
-                .accessibilityLabel("클립보드 자동 변환")
-                .accessibilityHint("끄면 이후 자동 변환과 아직 게시하지 않은 결과의 게시를 중지합니다.")
-            }
-            Text(model.settings.clipboardEnabled ? "켜짐 · 복사한 HEIC를 자동으로 변환합니다" : "꺼짐 · 새로 복사한 내용은 변환하지 않습니다")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var emptyState: some View {
@@ -124,7 +100,7 @@ struct PanelView: View {
                 .accessibilityHidden(true)
             Text("클립보드에 표시할 파일이 없습니다").font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(model.settings.clipboardEnabled ? "Finder에서 HEIC 파일을 복사하세요." : "자동 변환을 켠 뒤 HEIC 파일을 복사하세요.")
+            Text(model.clipboardEnabled ? "Finder에서 HEIC 파일을 복사하세요." : "우클릭 메뉴에서 자동 변환을 다시 시작하세요.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -134,24 +110,30 @@ struct PanelView: View {
 
     private var guidance: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !model.message.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
-                    if model.active {
-                        ProgressView().controlSize(.small).accessibilityHidden(true)
+            if !model.clipboardEnabled {
+                Label("자동 변환 일시정지됨", systemImage: "pause.circle")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Text("준비된 결과 유지 · 우클릭으로 다시 시작")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                if !model.message.isEmpty {
+                    HStack(alignment: .top, spacing: 8) {
+                        if model.active {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                        }
+                        Text(model.message).font(.caption).lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(model.message)
+                            .accessibilityLabel(model.message)
                     }
-                    Text(model.message).font(.caption).lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .help(model.message)
-                        .accessibilityLabel(model.message)
                 }
+                Text(!model.clipboardFiles.isEmpty && model.clipboardFiles.allSatisfy(\.isVideo)
+                     ? "복사한 동영상의 클립보드 내용을 그대로 유지합니다."
+                     : "변환 완료 후 ⌘V로 붙여넣으세요. 완료 전에는 원본이 전달될 수 있습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(!model.clipboardFiles.isEmpty && model.clipboardFiles.allSatisfy(\.isVideo)
-                 ? "복사한 동영상의 클립보드 내용을 그대로 유지합니다."
-                 : model.settings.clipboardEnabled
-                 ? "변환 완료 후 ⌘V로 붙여넣으세요. 완료 전에는 원본이 전달될 수 있습니다."
-                 : "이미 변환해 준비한 클립보드는 유지됩니다.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

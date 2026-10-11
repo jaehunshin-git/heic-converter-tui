@@ -61,18 +61,32 @@ enum PhotoClipboardIconGeometry {
     }
 
     /// 벡터 그리기 핸들러는 화면 배율마다 다시 그려져 1x·2x에서 선명하다.
-    static func makeTemplateImage(size: CGSize = menuBarSize) -> NSImage {
+    static func makeTemplateImage(size: CGSize = menuBarSize, isPaused: Bool = false) -> NSImage {
         let image = NSImage(size: size, flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.setAllowsAntialiasing(true)
             context.setShouldAntialias(true)
-            context.setFillColor(NSColor.black.cgColor)
+            context.setFillColor(NSColor.black.withAlphaComponent(isPaused ? 0.55 : 1).cgColor)
             context.addPath(silhouette(in: rect))
             context.fillPath()
+            if isPaused {
+                let scale = min(rect.width / 18, rect.height / 20)
+                context.saveGState()
+                context.translateBy(x: rect.midX - 9 * scale, y: rect.midY - 10 * scale)
+                context.scaleBy(x: scale, y: scale)
+                // 옅은 클립보드와 진한 일시정지 기호로 색상에만 의존하지 않고 상태를 알린다.
+                context.setBlendMode(.clear)
+                context.fillEllipse(in: CGRect(x: 9.5, y: 11.5, width: 8, height: 8))
+                context.setBlendMode(.normal)
+                context.setFillColor(NSColor.black.cgColor)
+                context.fill(CGRect(x: 11, y: 13, width: 1.7, height: 5))
+                context.fill(CGRect(x: 14, y: 13, width: 1.7, height: 5))
+                context.restoreGState()
+            }
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = accessibilityDescription
+        image.accessibilityDescription = isPaused ? "HEIC Converter — 자동 변환 일시정지됨" : accessibilityDescription
         return image
     }
 }

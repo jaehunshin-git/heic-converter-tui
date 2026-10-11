@@ -28,7 +28,7 @@ See [README.ko.md](README.ko.md) for Korean documentation.
 
 | Feature | Description |
 | --- | --- |
-| Menu bar app (issue #7, unreleased) | Left-click shows an enable/disable toggle and the current clipboard file names, thumbnails, and status. Right-click opens Settings or Quit. Copy detection does not open the panel. |
+| Menu bar app (issue #7, unreleased) | Left-click shows current clipboard file names, thumbnails, and status. Right-click offers Pause/Resume, Settings, and Quit. Copy detection does not open the panel. |
 | Automatic clipboard conversion (in implementation) | Convert supported HEIC inputs to JPEG/PNG, then paste with the usual Command-V. Preserve other items and publish only when every HEIC succeeds and the clipboard generation is still current. |
 | Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
 | Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
@@ -87,9 +87,9 @@ App/DMG distribution is being separated from PyPI distribution; this change keep
 available through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
 For source builds, see [the build guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md).
 
-The minimal panel shows the automatic conversion toggle and only the current
-clipboard's file names, thumbnails, and ready/converting/completed/failed status.
-Left-click opens or hides it; right-click offers Settings and Quit. Settings live in
+The minimal panel shows only the current clipboard's file names, thumbnails,
+and ready/converting/completed/failed status. Left-click opens or hides it;
+right-click offers Pause/Resume, Settings, and Quit. Settings live in
 a separate window. The pointer to the menu bar icon and screen-edge placement remain.
 Copy detection never opens the panel and no clipboard history is kept.
 The panel closes when focus moves to another app or window. Click the menu bar icon to open it again.
@@ -103,9 +103,11 @@ Completion notices close after four seconds; failures close after six seconds.
 Click a notice to open the current clipboard panel, or dismiss it with its close button.
 The notice height fits its text and progress bar automatically.
 
-Automatic conversion defaults to on for a fresh configuration; the toggle and
-conversion options persist. An enabled startup also processes the current HEIC input,
-and enabling the feature processes the current input. Clipboard polling is every
+Automatic conversion starts enabled on every launch. Pause applies only to the
+current session; the next launch starts enabled even if an older configuration
+saved the feature as disabled. Conversion options still persist. A paused menu bar
+icon shows a pause mark and the panel explains how to resume. Startup and resume
+also process the current HEIC input. Clipboard polling is every
 0.25 seconds. Supported input is a readable local regular `.heic` file represented
 by a file URL, or raw `public.heic` image data. File extensions are case-insensitive.
 File promises and representations that cannot be read and restored safely are rejected.
@@ -149,7 +151,7 @@ KakaoTalk showed one and six files in its pre-send preview; no message was sent.
 iCloud-only assets, Photos drag promises, and actual chat delivery remain unverified.
 Receiving apps choose supported representations and may not paste every preserved item.
 See [the clipboard contract and verification limits (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md).
-Local validation passed 136 Python tests, 93 Swift tests, Ruff, app/DMG smoke and
+Local validation passed 136 Python tests, 95 Swift tests, Ruff, app/DMG smoke and
 Python distribution checks on macOS 27.2. Apple Silicon macOS 15 and 26 also passed
 tests, app builds, DMG installation checks and Python distribution validation for
 commit `bdbde95` in [GitHub Actions](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
