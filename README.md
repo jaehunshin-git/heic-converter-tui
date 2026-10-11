@@ -130,7 +130,10 @@ Converted items provide a temporary file URL and image representations for recei
 apps. Referenced files remain available while the published clipboard needs them;
 results do not accumulate in a normal output folder. Normal quit restores the original
 only if the clipboard is still the app's published generation, then cleans up temporary
-files. Failed restoration retains referenced files. Source files are never modified.
+files. Failed restoration retains referenced files. Synthetic items passed preservation
+checks after process exit; preservation of actual Photos file URLs after normal quit
+still needs validation. A separate clipboard restore tool lost the Photos URL after
+exit while retaining the image and metadata. Source files are never modified.
 Recovery after an abnormal exit is not guaranteed.
 
 Defaults remain JPEG, JPEG quality 90, PNG compression 6, and metadata `safe`.
@@ -147,8 +150,9 @@ iCloud-only assets, Photos drag promises, and actual chat delivery remain unveri
 Receiving apps choose supported representations and may not paste every preserved item.
 See [the clipboard contract and verification limits (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md).
 Local validation passed 136 Python tests, 93 Swift tests, Ruff, app/DMG smoke and
-Python distribution checks on macOS 27.2. macOS 15/26 validation is tracked by CI
-for the proposed commit, separately from these local results.
+Python distribution checks on macOS 27.2. Apple Silicon macOS 15 and 26 also passed
+tests, app builds, DMG installation checks and Python distribution validation for
+commit `bdbde95` in [GitHub Actions](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
 
 App packages use ad-hoc signing and are not notarized. DMG packaging does not bypass
 Gatekeeper. Verify a released DMG's checksum, install the app into Applications, and

@@ -142,7 +142,11 @@ Photos의 원문 HEIC를 제공받으면 아직 준비되지 않을 수 있는 �
 선택하므로 보존한 모든 항목이 함께 붙여넣어지는지는 별도 검증이 필요합니다.
 [클립보드 계약과 검증 범위](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)를 참고하세요.
 macOS 27.2에서 Python 136개·Swift 93개·Ruff, 앱/DMG smoke와 Python 배포물
-검사가 통과했습니다. macOS 15/26 검증은 제안 커밋의 CI 기록으로 별도 확인합니다.
+검사가 통과했습니다. 합성 항목은 프로세스 종료 후에도 보존됐지만 실제 Photos 파일 URL의
+정상 종료 후 보존은 추가 검증이 필요합니다. 별도 복구 도구에서는 종료 후 URL이 사라졌고
+사진·메타데이터는 보존됐습니다. macOS 15·26 Apple Silicon에서도 커밋 `bdbde95`의 테스트,
+앱 빌드·DMG 설치·Python 배포물 검증이
+[CI에서 통과했습니다](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
 
 앱 배포물은 ad-hoc 서명을 사용하며 공증을 받지 않습니다. DMG 포장은 Gatekeeper를
 우회하지 않습니다. 릴리스된 DMG의 체크섬을 확인하고 앱을 Applications에 설치하며,
