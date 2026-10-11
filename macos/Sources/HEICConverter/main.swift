@@ -22,6 +22,7 @@ final class DropPanel: NSPanel {
     let model = AppModel(startClipboard: !CommandLine.arguments.contains("--smoke-test"))
     private var statusItem: NSStatusItem!
     private var panel: DropPanel!
+    private let panelChrome = PanelChromeState()
     private var countSubscription: AnyCancellable?
     private var inputSubscription: AnyCancellable?
     private var inputLayoutScheduled = false
@@ -54,7 +55,7 @@ final class DropPanel: NSPanel {
         panel.hasShadow = true
         panel.minSize = PanelPlacement.minimumSize
         panel.delegate = self
-        let contentView = NSHostingView(rootView: PanelView(model: model, onClose: { [weak self] in
+        let contentView = NSHostingView(rootView: PanelView(model: model, chrome: panelChrome, onClose: { [weak self] in
             self?.hidePanel()
         }, onSettingsExpansionChanged: { [weak self] expanded in
             self?.setSettingsExpanded(expanded)
@@ -326,8 +327,17 @@ final class DropPanel: NSPanel {
                           height: max(userPreferredHeight, PanelPlacement.preferredHeight(
                             fileCount: model.queue.items.count, stagedCount: model.staged.count, settingsExpanded: settingsExpanded, outputFormat: model.settings.options.outputFormat)))
         let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
+        let pointerX = PanelPlacement.pointerCenter(anchorX: statusIconCenterX() ?? geometry.anchor.midX, panelFrame: frame)
+        if panelChrome.pointerX != pointerX { panelChrome.pointerX = pointerX }
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         lastPositionedHeight = panel.frame.height
+    }
+
+    /// 대기 수 글자를 제외한 실제 이미지 중앙을 돌출부의 기준으로 사용한다.
+    private func statusIconCenterX() -> CGFloat? {
+        guard let button = statusItem.button, let window = button.window,
+              let imageRect = button.cell?.imageRect(forBounds: button.bounds), !imageRect.isEmpty else { return nil }
+        return window.convertToScreen(button.convert(imageRect, to: nil)).midX
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -350,6 +360,8 @@ final class DropPanel: NSPanel {
             && frame.width >= min(PanelPlacement.minimumSize.width, available.width)
             && frame.height >= min(PanelPlacement.minimumSize.height, available.height)
             && abs(frame.minX - expected.minX) < 1 && abs(frame.maxY - expected.maxY) < 1
+            && abs(panelChrome.pointerX - PanelPlacement.pointerCenter(
+                anchorX: statusIconCenterX() ?? geometry.anchor.midX, panelFrame: frame)) < 1
         print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame), 배치 검증: \(passed)")
         return passed
     }

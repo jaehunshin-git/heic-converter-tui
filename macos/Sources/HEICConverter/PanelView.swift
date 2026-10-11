@@ -5,6 +5,7 @@ import ConverterKit
 
 struct PanelView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var chrome: PanelChromeState
     var onClose: () -> Void
     var onSettingsExpansionChanged: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -49,6 +50,7 @@ struct PanelView: View {
             Divider().padding(.horizontal, 14)
             footer.padding(14)
         }
+        .padding(.top, PanelPlacement.pointerHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             ZStack {
@@ -60,10 +62,10 @@ struct PanelView: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(PanelOutline(pointerX: chrome.pointerX))
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(contrast == .increased ? Color.primary.opacity(0.5) : Color.white.opacity(colorScheme == .dark ? 0.22 : 0.6), lineWidth: 1)
+            PanelOutline(pointerX: chrome.pointerX)
+                .stroke(contrast == .increased ? Color.primary.opacity(0.5) : Color.white.opacity(colorScheme == .dark ? 0.22 : 0.6), lineWidth: 1)
                 .allowsHitTesting(false)
         }
         .controlSize(.regular)
