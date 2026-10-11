@@ -41,6 +41,16 @@ jobs:
         run: |
           swift build --package-path macos
           swift test --package-path macos
+          # 최신 Swift의 swift test가 실행 대상 XCTest 번들을 생략하는 경우도 검증한다.
+          test_bin="$(swift build --package-path macos --show-bin-path)"
+          if [ -d "$test_bin/HEICConverterTests.xctest" ]; then
+            xcrun xctest "$test_bin/HEICConverterTests.xctest"
+          else
+            # 기존 SwiftPM은 테스트 대상들을 한 패키지 번들로 조립한다.
+            xcrun xctest "$test_bin/HEICConverterPackageTests.xctest"
+          fi
+      - name: 클립보드 진단 도구의 독립 프로세스 검증
+        run: .venv-app-build/bin/python packaging/macos/test_clipboard_probe.py
       - name: 앱과 DMG 조립 및 설치본 검증
         # GUI 준비 또는 이미지 attach/verify가 정지해도 job을 무기한 점유하지 않는다.
         timeout-minutes: 20
