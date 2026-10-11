@@ -83,7 +83,7 @@ heic-converter/
 workflow describes the source change contract, not verified behavior of an existing DMG.
 The app targets **Apple Silicon arm64, macOS 15+** and bundles its worker runtime.
 App/DMG distribution is being separated from PyPI distribution; this change keeps
-`pyproject.toml` and the Python package version unchanged. Existing releases are
+`pyproject.toml` and the Python package version at 0.3.0. Existing releases are
 available through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
 For source builds, see [the build guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md).
 
@@ -113,13 +113,23 @@ by a file URL, or raw `public.heic` image data. File extensions are case-insensi
 File promises and representations that cannot be read and restored safely are rejected.
 An access denial stops automatic reads and is shown as a status.
 
+Inputs that combine Photos asset-reference metadata (`com.apple.photos.object-reference.asset`)
+with a file URL inside a `.photoslibrary`
+are unsupported because full restoration after normal quit cannot be guaranteed.
+This rejects the entire input even when raw HEIC or other convertible items are
+present, without opening the library file or using it for a thumbnail. Raw HEIC
+without a Photos library URL remains supported. Export an original file and copy
+it from Finder to use the file workflow. File-promise types are checked across
+all items before requesting any representation data from their providers.
+Offline ordinary files are rejected before opening them.
+
 Video declarations, MOV/other movie file URLs, and Photos video asset metadata
 take priority over accompanying JPEG/HEIC previews. Videos are shown as excluded
 and their clipboard representations remain unchanged. Photos may supply a JPEG
 poster rather than the original MOV file; preserving that clipboard does not export
 the video. To obtain the original video file, use
 [Photos' unmodified-original export](https://support.apple.com/ko-kr/guide/photos/pht6e157c5f/12.0/mac/27).
-Unrecognized Photos asset metadata is preserved without automatic conversion.
+Unrecognized Photos asset metadata prevents automatic publication.
 
 Copy supported HEIC content, wait for completion, then use the usual **Command-V**
 in the receiving app. Pasting before conversion completes may deliver the original.
@@ -133,9 +143,10 @@ apps. Referenced files remain available while the published clipboard needs them
 results do not accumulate in a normal output folder. Normal quit restores the original
 only if the clipboard is still the app's published generation, then cleans up temporary
 files. Failed restoration retains referenced files. Synthetic items passed preservation
-checks after process exit; preservation of actual Photos file URLs after normal quit
-still needs validation. A separate clipboard restore tool lost the Photos URL after
-exit while retaining the image and metadata. Source files are never modified.
+checks after process exit. Follow-up checks also confirmed that the JPEG raw clipboard
+provided by Photos remained intact through app launch and normal quit, including
+all types, bytes, and the clipboard generation. This does not establish restoration
+of the unsupported Photos library URLs. Source files are never modified.
 Recovery after an abnormal exit is not guaranteed.
 
 Defaults remain JPEG, JPEG quality 90, PNG compression 6, and metadata `safe`.
@@ -143,18 +154,28 @@ Previously saved conversion values are retained. Legacy `outputDirectory` and
 `onConflict` settings are preserved but excluded from the automatic conversion UI.
 The CLI/TUI retains its existing output paths, conflict policies, and controls.
 
-Local checks covered Photos HEIC copy, synthetic original/edited/multiple photos,
-and video-poster exclusion. Photos raw HEIC takes priority over its potentially
-unavailable file URL. Offline ordinary files are rejected before opening them.
-Finder pasted one and three converted files and six mixed files without duplicates.
-KakaoTalk showed one and six files in its pre-send preview; no message was sent.
-iCloud-only assets, Photos drag promises, and actual chat delivery remain unverified.
-Receiving apps choose supported representations and may not paste every preserved item.
-See [the clipboard contract and verification limits (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md).
-Local validation passed 136 Python tests, 95 Swift tests, Ruff, app/DMG smoke and
-Python distribution checks on macOS 27.2. Apple Silicon macOS 15 and 26 also passed
-tests, app builds, DMG installation checks and Python distribution validation for
-commit `bdbde95` in [GitHub Actions](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
+The [PR #9 record from 2026-10-11 (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)
+covered Photos HEIC copy, synthetic original/edited/multiple photos, and video-poster
+exclusion. Finder pasted one and three converted files and six mixed files without
+duplicates. KakaoTalk showed one and six files in its pre-send preview; no message
+was sent in those checks. A separate restore tool lost the Photos file URL after
+exit while retaining the image and metadata. These are historical results, not
+current support guarantees for Photos library URLs. At that time, local validation
+passed 136 Python tests, 95 Swift tests, Ruff, app/DMG smoke and Python distribution
+checks on macOS 27.2. Apple Silicon macOS 15 and 26 also passed tests, app builds,
+DMG installation checks and Python distribution validation for commit `bdbde95`
+in [GitHub Actions](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
+
+Follow-up observation of an actual iCloud photo that the user identified as not
+downloaded found file-promise types and `public.jpeg` during drag, and JPEG raw
+without HEIC during ordinary copy. The drag type observation requested no provider
+data; the download state was not independently verified. JPEG copy is preserved
+without HEIC conversion. Receiving apps choose supported representations and may
+not paste every preserved item. See [the clipboard contract (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)
+and [the remaining-validation follow-up (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)
+for current results, test totals, and KakaoTalk verification status. The historical
+Python-core-unchanged scope applies to PR #9; the follow-up fixes native HDR primary
+image selection while preserving CLI/TUI and existing SDR fallback policies.
 
 App packages use ad-hoc signing and are not notarized. DMG packaging does not bypass
 Gatekeeper. Verify a released DMG's checksum, install the app into Applications, and
@@ -333,8 +354,10 @@ normalizes the output EXIF orientation value to `1`. JPEG does not support alpha
 so transparent pixels are composited on white; PNG keeps alpha channels.
 
 On macOS 15 or later, HEIC images with an Apple HDR gain map are converted to
-16-bit HDR PNG with an HDR color profile. This preserves the source image's HDR
-brightness and color appearance on compatible displays. Other environments
+16-bit HDR PNG with an HDR color profile. The native HDR path selects the HEIC's
+primary image even when its index is not zero; a generated multi-image HEIC verifies
+the nonzero primary index, 16-bit PQ output, and metadata policies. This preserves
+the source image's HDR brightness and color appearance on compatible displays. Other environments
 save the base SDR image, which may look different from the HEIC on an HDR
 display. JPEG output is SDR. App results report whether HDR was applied and the
 reason for SDR fallback. HDR preservation depends on the source gain map and

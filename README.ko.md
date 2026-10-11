@@ -86,7 +86,7 @@ heic-converter/
 동작 계약이며 기존 DMG의 검증된 기능을 뜻하지 않습니다. 앱은 **Apple Silicon
 arm64, macOS 15 이상**을 대상으로 내장 worker 런타임을 사용합니다. 앱/DMG와
 PyPI 배포 분리를 진행하며 이번 변경에서는 `pyproject.toml`과 Python 패키지 버전을
-유지합니다. 기존 배포물은 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases),
+0.3.0으로 유지합니다. 기존 배포물은 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases),
 소스 빌드는 [빌드 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)를 참고하세요.
 
 왼쪽 클릭 패널에는 현재 클립보드 파일의 이름·썸네일 및 준비/변환 중/완료/실패
@@ -110,6 +110,15 @@ PyPI 배포 분리를 진행하며 이번 변경에서는 `pyproject.toml`과 Py
 로컬 일반 `.heic` 파일과 원문 `public.heic` 이미지 데이터입니다. 확장자는
 대소문자를 구분하지 않습니다. 파일 약속이나 안전하게 읽고 복구할 수 없는 표현은
 거절합니다. 접근이 거부되면 자동 읽기를 중단하고 상태를 안내합니다.
+
+Photos 자산 참조 메타데이터(`com.apple.photos.object-reference.asset`)와
+`.photoslibrary` 내부 파일 URL이 함께 있는 입력은 정상 종료 후
+전체 표현의 복구를 보장할 수 없어 지원하지 않습니다. raw HEIC나 다른 변환 가능한
+항목이 있어도 전체 입력을 거절하며 보관함 파일을 읽거나 썸네일로 사용하지 않습니다.
+보관함 URL 없는 raw HEIC 단독 입력은 계속 지원합니다. 파일 변환이 필요하면 원본을
+내보낸 뒤 Finder에서 복사하세요. 파일 약속은 전체 항목의 타입을 먼저 확인해 공급자에게
+표현 데이터를 요청하기 전에 거절합니다.
+일반 오프라인 파일은 열기 전에 거절합니다.
 
 동영상 타입·MOV 등 동영상 파일 URL·Photos 동영상 메타데이터는 함께 제공된
 JPEG/HEIC 미리보기보다 우선합니다. 동영상은 변환 제외로 표시하고 클립보드 표현을
@@ -135,20 +144,26 @@ HEIC를 복사하고 완료를 기다린 뒤 대상 앱에서 기존 **⌘V**로
 레거시 설정으로 보존하되 자동 변환 UI에서 제외합니다. CLI/TUI의 출력 경로,
 충돌 정책과 조작 방식은 유지합니다.
 
-Photos HEIC 복사, 합성 원본·편집·다중 사진과 동영상 포스터 제외를 확인했습니다.
-Photos의 원문 HEIC를 제공받으면 아직 준비되지 않을 수 있는 파일 URL보다 우선합니다.
-일반 오프라인 파일은 열기 전에 거절합니다. Finder에는 변환 파일 한 개·세 개와 혼합 파일
-여섯 개가 중복 없이 붙었습니다. 카카오톡은 전송 전 미리보기에 한 개·여섯 개를 표시했으며
-전송은 취소했습니다. iCloud 미다운로드 자산, Photos 드래그 파일 약속과 채팅 전송·수신은
-미검증입니다. 수신 앱은 지원하는 표현을
-선택하므로 보존한 모든 항목이 함께 붙여넣어지는지는 별도 검증이 필요합니다.
-[클립보드 계약과 검증 범위](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)를 참고하세요.
-macOS 27.2에서 Python 136개·Swift 95개·Ruff, 앱/DMG smoke와 Python 배포물
-검사가 통과했습니다. 합성 항목은 프로세스 종료 후에도 보존됐지만 실제 Photos 파일 URL의
-정상 종료 후 보존은 추가 검증이 필요합니다. 별도 복구 도구에서는 종료 후 URL이 사라졌고
-사진·메타데이터는 보존됐습니다. macOS 15·26 Apple Silicon에서도 커밋 `bdbde95`의 테스트,
-앱 빌드·DMG 설치·Python 배포물 검증이
-[CI에서 통과했습니다](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
+[2026-10-11 PR #9 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)에서는 Photos HEIC 복사,
+합성 원본·편집·다중 사진과 동영상 포스터 제외를 확인했습니다. Finder에는 변환 파일
+한 개·세 개와 혼합 파일 여섯 개가 중복 없이 붙었습니다. 카카오톡은 전송 전 미리보기에
+한 개·여섯 개를 표시했으며 당시 전송은 취소했습니다. 별도 복구 도구에서는 종료 후
+Photos 파일 URL이 사라지고 사진·메타데이터만 보존됐습니다. 이는 당시 관찰 기록이며
+현재 Photos 보관함 URL의 지원을 보장하지 않습니다. 당시 macOS 27.2에서 Python
+136개·Swift 95개·Ruff, 앱/DMG smoke와 Python 배포물 검사가 통과했습니다.
+macOS 15·26 Apple Silicon에서도 커밋 `bdbde95`의 테스트, 앱 빌드·DMG 설치·Python
+배포물 검증이 [CI에서 통과했습니다](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
+
+후속 관찰에서 사용자가 미다운로드로 지정한 실제 iCloud 사진의 드래그는 파일 약속과
+`public.jpeg`, 일반 복사는 HEIC 없는 JPEG raw를 제공했습니다. 드래그 타입은 공급자에게
+데이터를 요청하지 않고 관찰했으며 다운로드 상태는 독립적으로 검증하지 않았습니다.
+일반 복사 JPEG는 재변환 없이 앱 실행·정상 종료 후 전체 표현의 타입·바이트·세대가
+보존됐습니다. 수신 앱은 지원하는 표현을 선택하므로 모든 항목의 붙여넣기는 별도 검증
+대상입니다. 현재 결과와 테스트 수, 카카오톡 후속 실기 상태는
+[남은 검증 후속 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md), 지원 계약은
+[클립보드 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)을 참고하세요. Python 코어를 수정하지
+않았다는 설명은 PR #9 당시 범위입니다. 후속 범위에는 네이티브 HDR 대표 이미지 선택
+수정이 포함되며 CLI/TUI 및 기존 SDR fallback 정책은 유지합니다.
 
 앱 배포물은 ad-hoc 서명을 사용하며 공증을 받지 않습니다. DMG 포장은 Gatekeeper를
 우회하지 않습니다. 릴리스된 DMG의 체크섬을 확인하고 앱을 Applications에 설치하며,
@@ -325,7 +340,9 @@ TUI에서는 자주 쓰는 품질·압축 사전 설정을 고르며, CLI에서�
 배경과 합성합니다. PNG는 알파 채널을 유지합니다.
 
 macOS 15 이상에서는 Apple HDR 게인 맵이 포함된 HEIC를 16비트 HDR PNG로
-변환합니다. HDR 화면에서 원본의 밝기와 색 표현을 유지하기 위해 PNG에 HDR
+변환합니다. 네이티브 HDR 경로는 대표 이미지의 인덱스가 0이 아니어도 해당 이미지를
+선택합니다. 실제 생성한 합성 다중 HEIC로 대표 인덱스 1, 16비트·PQ 출력과 메타데이터
+정책을 검증했습니다. HDR 화면에서 원본의 밝기와 색 표현을 유지하기 위해 PNG에 HDR
 색상 프로파일을 기록합니다. 다른 환경에서는 HEIC의 기본 SDR 이미지를 PNG로
 저장하므로 HDR 화면에서 원본과 다르게 보일 수 있습니다. JPEG 출력은 SDR입니다.
 앱의 파일별 결과에는 HDR 적용 여부와 SDR 처리 사유를 표시합니다. HDR 처리는
