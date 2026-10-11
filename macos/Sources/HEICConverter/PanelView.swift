@@ -1,57 +1,46 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 import ConverterKit
 
 struct PanelView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var chrome: PanelChromeState
-    var onClose: () -> Void
-    var onSettingsExpansionChanged: (Bool) -> Void = { _ in }
+    var onClose: () -> Void = {}
+    // 스크롤 컨테이너 대신 실제 행을 배치해 필요한 패널 높이를 측정한다.
+    var measuresContent = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var closeFocused: Bool
-    @FocusState private var dropFocused: Bool
-    @StateObject private var presentation = PanelPresentationState()
-    private var dropHighlighted: Bool { model.dropTargeted || presentation.dropHovered || dropFocused }
-    private var dropTitle: String {
-        if model.dropTargeted { return "여기에 놓아서 파일 선택" }
-        switch presentation.dropFeedback {
-        case .idle: return "파일을 놓거나 클릭해 선택"
-        case .loading: return "파일을 확인하고 있습니다"
-        case .accepted: return "HEIC 파일을 선택했습니다"
-        case .rejected: return "추가할 수 없는 파일입니다"
-        }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
             header.padding(14)
             Divider().padding(.horizontal, 14)
-            OverlayScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    dropZone
-                    if !model.staged.isEmpty { stagedFiles }
-                    settings
-                    fileList
-                    if !model.notices.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            ForEach(Array(model.notices.enumerated()), id: \.offset) { _, notice in
-                                Label("\(URL(fileURLWithPath: notice.path).lastPathComponent): \(notice.reason)", systemImage: "exclamationmark.triangle")
-                                    .font(.caption).foregroundStyle(.primary)
-                            }
-                        }.glassCard()
-                    }
-                }.padding(14)
-                    .buttonStyle(PanelActionButtonStyle()).controlSize(.regular)
+            clipboardToggle.padding(14)
+            HStack {
+                Text("현재 클립보드").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(model.clipboardFiles.count)개").font(.caption).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .padding(.horizontal, 14).padding(.bottom, 8)
+            if model.clipboardFiles.isEmpty {
+                emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if measuresContent {
+                fileRows(Array(model.clipboardFiles.prefix(3)))
+            } else {
+                OverlayScrollView {
+                    fileRows(model.clipboardFiles)
+                }
+                // 새 클립보드로 바뀌면 첫 행부터 표시하고 상태 갱신 시에는 위치를 유지한다.
+                .id(model.clipboardFiles.map(\.id))
             }
             Divider().padding(.horizontal, 14)
-            footer.padding(14)
+            guidance.padding(14)
         }
         .padding(.top, PanelPlacement.pointerHeight)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: measuresContent ? nil : .infinity)
         .background {
             ZStack {
                 if reduceTransparency {
@@ -69,446 +58,158 @@ struct PanelView: View {
                 .allowsHitTesting(false)
         }
         .controlSize(.regular)
-        .buttonStyle(PanelActionButtonStyle())
-        .disabled(model.terminating)
-        .task(id: presentation.conversionFeedback?.id) {
-            guard let feedback = presentation.conversionFeedback else { return }
-            do { try await Task.sleep(for: .milliseconds(1500)) } catch { return }
-            if presentation.conversionFeedback?.id == feedback.id {
-                presentation.conversionFeedback = nil
+    }
+
+    private func fileRows(_ files: [ClipboardDisplayFile]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(files, id: \.id) { file in
+                ClipboardFileRow(file: file)
+                if file.id != files.last?.id { Divider().padding(.leading, 56) }
             }
-        }
-        .onDisappear { presentation.conversionFeedback = nil }
-        .onChange(of: presentation.settingsExpanded) { _, expanded in onSettingsExpansionChanged(expanded) }
-        .onChange(of: removablePaths) { _, paths in presentation.selectedPaths.formIntersection(paths) }
-        .onChange(of: model.queue.items.map(\.id)) { old, new in
-            let previous = Set(old)
-            presentation.revealFileID = new.last { !previous.contains($0) }
-        }
+        }.padding(.horizontal, 14)
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image(systemName: "photo.badge.arrow.down.fill")
-                .font(.title2).foregroundStyle(Color.accentColor)
+            PhotoClipboardIconShape().fill(Color(white: contrast == .increased ? 0.25 : 0.40))
+                .frame(width: 22, height: 24)
                 .frame(width: 34, height: 34)
-                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color(white: contrast == .increased ? 0.60 : 0.90), lineWidth: 0.75)
+                        .allowsHitTesting(false)
+                }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("HEIC Converter").font(.title3.bold())
-                Text("HEIC 파일을 JPEG · PNG로 변환").font(.caption).foregroundStyle(.secondary)
-            }
+            Text("HEIC Converter").font(.title3.bold())
             Spacer(minLength: 4)
-            Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 32, height: 32) }
-                .buttonStyle(NeutralCloseButtonStyle()).accessibilityLabel("패널 숨기기").help("패널 숨기기 · 작업과 감지는 계속됩니다")
-                .focused($closeFocused).focusEffectDisabled()
-                .overlay(Circle().strokeBorder(Color.primary.opacity(closeFocused ? 0.45 : 0), lineWidth: 1.5).allowsHitTesting(false))
-                .keyboardShortcut(.escape, modifiers: [])
-        }
-    }
-
-    private var dropZone: some View {
-        Button(action: chooseFiles) {
-            VStack(spacing: 6) {
-                if presentation.dropFeedback == .loading {
-                    ProgressView().controlSize(.small).frame(height: 22)
-                } else {
-                    Image(systemName: model.dropTargeted ? "arrow.down.circle.fill"
-                          : presentation.dropFeedback == .accepted ? "checkmark.circle"
-                          : presentation.dropFeedback == .rejected ? "exclamationmark.circle" : "arrow.down.doc")
-                        .font(.system(size: 22)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
-                }
-                Text(dropTitle).font(.headline).foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                Text("HEIC 파일을 끌어놓거나 클릭해 파일을 선택하세요")
-                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button(action: onClose) {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 32, height: 32)
             }
-            .frame(maxWidth: .infinity, minHeight: 100).padding(12)
-            .background(Color.accentColor.opacity(model.dropTargeted ? 0.2 : dropHighlighted ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.accentColor.opacity(dropHighlighted ? 0.85 : 0.35),
-                        style: StrokeStyle(lineWidth: model.dropTargeted ? 2 : dropFocused ? 1.5 : presentation.dropHovered ? 1.5 : 1,
-                                           dash: model.dropTargeted || dropFocused ? [] : [5, 4])))
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .buttonStyle(NeutralCloseButtonStyle())
+            .accessibilityLabel("패널 숨기기")
+            .help("패널 숨기기 · 자동 변환은 계속됩니다")
+            .focused($closeFocused).focusEffectDisabled()
+            .overlay(Circle().strokeBorder(Color.primary.opacity(closeFocused ? 0.45 : 0), lineWidth: 1.5).allowsHitTesting(false))
+            .keyboardShortcut(.escape, modifiers: [])
         }
-        .buttonStyle(.plain)
-        .keyboardShortcut("o", modifiers: .command)
-        .focused($dropFocused).focusEffectDisabled()
-        .accessibilityLabel("HEIC 파일 선택")
-        .accessibilityHint("파일 선택 창에서 HEIC 파일을 선택합니다. 파일을 끌어놓을 수도 있습니다.")
-        .onHover { presentation.dropHovered = $0 }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: dropHighlighted)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: model.dropTargeted)
-        .onChange(of: model.staged.isEmpty) { _, empty in
-            if empty && presentation.dropFeedback == .accepted { presentation.dropFeedback = .idle }
-        }
-        .help("Photos 직접 드롭은 아직 지원하지 않습니다. Photos에서 수정되지 않은 HEIC 원본을 내보낸 뒤 Finder에서 드롭하세요.")
-        .onDrop(of: [UTType.fileURL.identifier] + NSFilePromiseReceiver.readableDraggedTypes,
-                isTargeted: $model.dropTargeted, perform: drop)
     }
 
-    private func chooseFiles() {
-        guard let accepted = model.chooseFiles() else { return }
-        presentation.latestDropID = UUID()
-        presentation.dropFeedback = accepted ? .accepted : .rejected
+    private var clipboardToggle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 16) {
+                Text("클립보드 자동 변환").font(.headline)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                Toggle("클립보드 자동 변환", isOn: Binding(
+                    get: { model.settings.clipboardEnabled },
+                    set: { model.setClipboard($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .fixedSize()
+                .accessibilityLabel("클립보드 자동 변환")
+                .accessibilityHint("끄면 이후 자동 변환과 아직 게시하지 않은 결과의 게시를 중지합니다.")
+            }
+            Text(model.settings.clipboardEnabled ? "켜짐 · 복사한 HEIC를 자동으로 변환합니다" : "꺼짐 · 새로 복사한 내용은 변환하지 않습니다")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var stagedFiles: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("선택한 파일 \(model.staged.count)개").font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(model.staged, id: \.path) { url in
-                        HStack(spacing: 10) {
-                            FileThumbnailView(url: url)
-                            Text(url.lastPathComponent).font(.callout).lineLimit(1).help(url.path)
-                        }
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            PhotoClipboardIconShape().fill(.secondary).frame(width: 29, height: 32)
+                .accessibilityHidden(true)
+            Text("클립보드에 표시할 파일이 없습니다").font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.settings.clipboardEnabled ? "Finder에서 HEIC 파일을 복사하세요." : "자동 변환을 켠 뒤 HEIC 파일을 복사하세요.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .multilineTextAlignment(.center).padding(.horizontal, 14).padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var guidance: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !model.message.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    if model.active {
+                        ProgressView().controlSize(.small).accessibilityHidden(true)
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 120)
-            HStack {
-                Button("취소", action: model.cancelStaged)
-                Spacer()
-                Button("대기 목록에 추가") { model.acceptStaged(convert: false) }
-                Button(model.selectedDestination == .files ? "지금 저장" : "지금 복사") {
-                    presentation.conversionFeedback = .init(destination: model.selectedDestination)
-                    model.acceptStaged(convert: true)
-                }.buttonStyle(PanelActionButtonStyle(tone: .conversion))
-            }
-        }.glassCard()
-    }
-
-    private var settings: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button { presentation.settingsExpanded.toggle() } label: {
-                HStack {
-                    Label("변환 설정", systemImage: "slider.horizontal.3").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text(presentation.settingsExpanded ? "접기" : "펼치기").font(.caption)
-                    Image(systemName: presentation.settingsExpanded ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
-                }.foregroundStyle(.primary).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("변환 설정")
-            .accessibilityValue(presentation.settingsExpanded ? "펼침" : "접힘")
-            .help("형식·품질·저장 위치를 요약합니다. 펼치면 메타데이터와 동일 이름 정책도 변경할 수 있습니다.")
-            if presentation.settingsExpanded {
-                expandedSettings
-            } else {
-                HStack(spacing: 6) {
-                    formatSegments.frame(width: 104, height: 22)
-                    Text(model.settings.options.outputFormat == "jpeg"
-                         ? "\(model.settings.options.qualityPreset.label) · 품질 \(model.settings.options.jpegQuality)"
-                         : "\(model.settings.options.pngCompressionPreset.label) · 압축 \(model.settings.options.pngCompression)")
-                        .font(.system(size: 10)).fixedSize()
-                    outputLocation(editable: false).frame(maxWidth: .infinity, alignment: .trailing)
-                }
-
-            }
-        }.glassCard()
-    }
-
-    private var expandedSettings: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            formatSegments.frame(height: 26)
-            if model.settings.options.outputFormat == "jpeg" {
-                CompactSegments(title: "JPEG 품질", selection: $model.settings.options.qualityPreset,
-                                choices: QualityPreset.allCases.map { SegmentChoice(value: $0, title: $0.label) })
-                    .frame(height: 26)
-                    .help("Low 60 · Medium 80 · High 90 · Raw 100. 인코더 설정값이며 백분율이 아닙니다. Raw도 손실 JPEG입니다.")
-                Text("품질 \(model.settings.options.jpegQuality) · Low 60 / Medium 80 / High 90 / Raw 100")
-                    .font(.caption).foregroundStyle(.primary)
-            } else {
-                CompactSegments(title: "PNG 압축", selection: $model.settings.options.pngCompressionPreset,
-                                choices: PNGCompressionPreset.displayOrder.map { SegmentChoice(value: $0, title: $0.label) })
-                    .frame(height: 26)
-                Text("압축 \(model.settings.options.pngCompression) · 화질은 같고 저장 시간과 크기가 달라집니다.")
-                    .font(.caption).foregroundStyle(.primary)
-                Text("네이티브 HDR PNG에는 이 압축 설정이 적용되지 않습니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Divider()
-            HStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Text("메타데이터").font(.caption).foregroundStyle(.secondary).fixedSize()
-                    Picker("메타데이터", selection: $model.settings.options.metadata) {
-                        Text("안전 보존").tag("safe"); Text("모두 보존").tag("preserve"); Text("제거").tag("strip")
-                    }.labelsHidden().fixedSize()
-                }.frame(maxWidth: .infinity, alignment: .center)
-                HStack(spacing: 6) {
-                    Text("동일 이름").font(.caption).foregroundStyle(.secondary).fixedSize()
-                    Picker("동일 이름", selection: $model.settings.options.onConflict) {
-                        Text("새 이름").tag("rename"); Text("건너뛰기").tag("skip"); Text("덮어쓰기").tag("overwrite"); Text("오류").tag("error")
-                    }.labelsHidden().fixedSize()
-                }.frame(maxWidth: .infinity, alignment: .center)
-            }.controlSize(.small)
-            outputLocation(editable: true)
-        }
-    }
-
-    private var formatSegments: some View {
-        CompactSegments(title: "형식", selection: $model.settings.options.outputFormat,
-                        choices: [SegmentChoice(value: "jpeg", title: "JPEG"), SegmentChoice(value: "png", title: "PNG")])
-    }
-
-    private func outputLocation(editable: Bool) -> some View {
-        HStack(spacing: 6) {
-            Spacer(minLength: 0)
-            Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
-            Text(model.settings.displayOutputDirectory).font(.caption).foregroundStyle(.primary)
-                .lineLimit(1).truncationMode(.head).help(model.settings.outputDirectory)
-            if editable {
-                Button("변경", action: model.chooseOutput)
-                    .font(.system(size: 11, weight: .medium)).fixedSize()
-                    .buttonStyle(PanelActionButtonStyle(compact: true))
-                    .accessibilityLabel("저장 위치 변경")
-            }
-        }
-    }
-
-    private var fileList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("파일 목록", systemImage: "photo.stack").font(.subheadline.weight(.semibold))
-                Text("대기 \(model.waitingCount)개").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("재시도", action: model.retryFailures).font(.caption).buttonStyle(PanelActionButtonStyle(compact: true))
-                    .accessibilityLabel("실패 재시도").disabled(!model.queue.items.contains { $0.status == .failed })
-                Button("정리", action: model.clearCompleted).font(.caption).buttonStyle(PanelActionButtonStyle(compact: true))
-                    .accessibilityLabel("완료 정리").disabled(!model.queue.items.contains { $0.status.finished })
-            }
-            if model.queue.items.isEmpty {
-                Label("대기 중인 파일이 없습니다.", systemImage: "tray")
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 2)
-            } else {
-                HStack(spacing: 6) {
-                    Button(allRemovableSelected ? "선택 해제" : "전체 선택") {
-                        presentation.selectedPaths = allRemovableSelected ? [] : removablePaths
-                    }.font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(removablePaths.isEmpty)
-                    Text("선택 \(presentation.selectedPaths.count)개").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    Button("선택 삭제") { model.removeSelected(presentation.selectedPaths); presentation.selectedPaths.removeAll() }
-                        .font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(presentation.selectedPaths.isEmpty)
-                    Button("전체 삭제") { model.removeAll(); presentation.selectedPaths.removeAll() }
-                        .font(.caption).buttonStyle(PanelActionButtonStyle(compact: true)).disabled(removablePaths.isEmpty)
-                }
-                Text("목록에서만 제거됩니다. 예약·변환 중인 항목은 유지됩니다.")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                LazyVStack(spacing: 0) {
-                    ForEach(model.queue.items) { item in
-                        HStack(alignment: .top, spacing: 8) {
-                            Button {
-                                if presentation.selectedPaths.contains(item.id) { presentation.selectedPaths.remove(item.id) }
-                                else { presentation.selectedPaths.insert(item.id) }
-                            } label: {
-                                HStack(alignment: .top, spacing: 8) {
-                                    Image(systemName: item.status.locked ? "lock" : presentation.selectedPaths.contains(item.id) ? "checkmark.square.fill" : "square")
-                                        .font(.caption).foregroundStyle(presentation.selectedPaths.contains(item.id) ? Color.accentColor : .secondary)
-                                        .frame(width: 14, height: 32).accessibilityHidden(true)
-                                    FileThumbnailView(url: item.url)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.url.lastPathComponent).font(.callout).lineLimit(1).help(item.id)
-                                        Text(item.status.label).font(.caption).foregroundStyle(color(item.status))
-                                        if let detail = item.detail { Text(detail).font(.caption2).foregroundStyle(.secondary) }
-                                    }
-                                    Spacer(minLength: 0)
-                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain).disabled(item.status.locked)
-                            .accessibilityLabel("\(item.url.lastPathComponent) 선택")
-                            .accessibilityValue(presentation.selectedPaths.contains(item.id) ? "선택됨" : "선택 안 됨")
-                            if let destination = item.destination { Button("결과") { model.reveal(destination) } }
-                            if item.status == .failed { Button("재시도") { model.retry(item.id) } }
-                            Button { model.remove(item.id) } label: { Image(systemName: "xmark").frame(width: 22, height: 22) }
-                                .buttonStyle(.borderless).disabled(item.status.locked).accessibilityLabel("\(item.url.lastPathComponent) 제거").help("항목 제거")
-                        }.padding(.vertical, 9).padding(.horizontal, 4)
-                            .background(presentation.selectedPaths.contains(item.id) ? Color.accentColor.opacity(0.14) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 8))
-                        Divider()
-                    }
-                }.background(FileRevealMarker(fileID: presentation.revealFileID))
-            }
-        }.glassCard()
-    }
-
-    private var removablePaths: Set<String> { Set(model.queue.items.filter { !$0.status.locked }.map(\.id)) }
-    private var allRemovableSelected: Bool {
-        !removablePaths.isEmpty && presentation.selectedPaths == removablePaths
-    }
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(model.message).font(.caption).foregroundStyle(.primary).textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if model.active {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Button(model.cancelling ? "취소 대기 중" : "현재 파일 완료 후 취소", action: model.cancel).disabled(model.cancelling)
+                    Text(model.message).font(.caption).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(model.message)
+                        .accessibilityLabel(model.message)
                 }
             }
-            HStack(spacing: 8) {
-                conversionButton(.files, title: model.active ? "변환·저장 예약" : "변환 후 저장", icon: "arrow.down.to.line")
-                conversionButton(.clipboard, title: model.active ? "변환·복사 예약" : "변환 후 복사", icon: "doc.on.clipboard")
-            }
-            .disabled(model.staged.isEmpty && !model.queue.items.contains { $0.status == .waiting })
-            Text(model.selectedDestination == .files ? "저장: 선택한 폴더에 변환 파일을 저장합니다." : "복사: 이미지로 붙여넣으며 파일은 남기지 않습니다.")
-                .font(.caption2).foregroundStyle(.secondary)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    clipboardButton
-                    Spacer(minLength: 0)
-                    outputButton
-                    quitButton
-                }
-                VStack(spacing: 8) {
-                    clipboardButton
-                    HStack(spacing: 8) { outputButton; quitButton }
-                }.frame(maxWidth: .infinity)
-            }
-            if let status = model.clipboardMessage { Text(status).font(.caption).foregroundStyle(.primary) }
-        }
-    }
-
-    private func conversionButton(_ destination: ConversionDestination, title: String, icon: String) -> some View {
-        let acknowledged = presentation.conversionFeedback?.destination == destination
-        return Button {
-            presentation.conversionFeedback = .init(destination: destination)
-            model.startWaiting(destination: destination, includingStaged: true)
-        } label: {
-            Label(title, systemImage: acknowledged ? "checkmark" : icon).font(.system(size: 13, weight: .semibold))
-                .frame(maxWidth: .infinity, minHeight: 24)
-        }
-        .buttonStyle(PanelActionButtonStyle(tone: acknowledged ? .success : .conversion))
-        .accessibilityLabel(destination == .files ? "파일 변환 후 저장" : "파일 변환 후 클립보드 복사")
-        .accessibilityValue(acknowledged ? "실행 요청됨" : (model.selectedDestination == destination ? "선택됨" : "선택 안 됨"))
-        .help(destination == .files ? "설정한 저장 폴더에 변환 파일을 저장합니다."
-              : "변환한 이미지를 클립보드에 복사합니다. 문서나 메신저에 붙여넣을 수 있으며 결과 파일은 남기지 않습니다.")
-    }
-
-    private var clipboardButton: some View {
-        Button { model.setClipboard(!model.settings.clipboardEnabled) } label: {
-            Label(model.settings.clipboardEnabled ? "클립보드 감지 켜짐" : "클립보드 감지 꺼짐",
-                  systemImage: model.settings.clipboardEnabled ? "checkmark.circle.fill" : "minus.circle")
-                .font(.caption.weight(.semibold)).fixedSize()
-        }
-        .buttonStyle(PanelActionButtonStyle(tone: model.settings.clipboardEnabled ? .detection : .neutral))
-        .accessibilityLabel("클립보드 감지")
-        .accessibilityValue(model.settings.clipboardEnabled ? "켜짐" : "꺼짐")
-        .help(model.settings.clipboardEnabled ? "클립보드 감지 끄기" : "클립보드 감지 켜기")
-    }
-
-    private var outputButton: some View {
-        Button("폴더 열기", action: model.openOutput).font(.caption.weight(.medium)).fixedSize()
-            .accessibilityLabel("저장 폴더 열기")
-    }
-
-    private var quitButton: some View {
-        Button("앱 종료") { NSApplication.shared.terminate(nil) }
-            .font(.caption.weight(.semibold)).fixedSize()
-            .buttonStyle(PanelActionButtonStyle(tone: .destructive))
-    }
-
-    private func drop(_ providers: [NSItemProvider]) -> Bool {
-        let dropID = UUID()
-        presentation.latestDropID = dropID
-        let supported = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
-        guard !supported.isEmpty else {
-            presentation.dropFeedback = .rejected
-            model.message = "Photos 직접 드롭은 아직 지원하지 않습니다. HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
-            return false
-        }
-        presentation.dropFeedback = .loading
-        Task { @MainActor in
-            var urls: [URL] = []
-            for provider in supported {
-                let url: URL? = await withCheckedContinuation { continuation in
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { value, _ in
-                        if let data = value as? Data { continuation.resume(returning: URL(dataRepresentation: data, relativeTo: nil)) }
-                        else if let url = value as? URL { continuation.resume(returning: url) }
-                        else { continuation.resume(returning: nil) }
-                    }
-                }
-                if let url { urls.append(url) }
-            }
-            if urls.isEmpty {
-                if presentation.latestDropID == dropID {
-                    presentation.dropFeedback = .rejected
-                    model.message = "파일 URL을 읽지 못했습니다. Photos 사진은 HEIC 원본을 내보낸 뒤 Finder에서 추가하세요."
-                }
-            } else {
-                let previousCount = model.staged.count
-                model.stage(urls, updateNotices: presentation.latestDropID == dropID)
-                if presentation.latestDropID == dropID {
-                    presentation.dropFeedback = model.staged.count > previousCount ? .accepted : .rejected
-                }
-            }
-        }
-        return true
-    }
-    private func color(_ status: FileStatus) -> Color {
-        switch status { case .succeeded: return .green; case .failed: return .red; case .running: return .accentColor; default: return .secondary }
+            Text(!model.clipboardFiles.isEmpty && model.clipboardFiles.allSatisfy(\.isVideo)
+                 ? "복사한 동영상의 클립보드 내용을 그대로 유지합니다."
+                 : model.settings.clipboardEnabled
+                 ? "변환 완료 후 ⌘V로 붙여넣으세요. 완료 전에는 원본이 전달될 수 있습니다."
+                 : "이미 변환해 준비한 클립보드는 유지됩니다.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct SegmentChoice<Value: Hashable> {
-    let value: Value
-    let title: String
-}
+private struct ClipboardFileRow: View {
+    let file: ClipboardDisplayFile
 
-/// 새로 추가한 목록의 마지막 행이 보이도록 외부 스크롤을 이동한다.
-private struct FileRevealMarker: NSViewRepresentable {
-    var fileID: String?
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> NSView { NSView() }
-    func updateNSView(_ view: NSView, context: Context) {
-        guard let fileID else { context.coordinator.fileID = nil; return }
-        guard context.coordinator.fileID != fileID else { return }
-        context.coordinator.fileID = fileID
-        // 모델 갱신에 따른 패널 확장과 레이아웃을 반영한 뒤 위치를 확인한다.
-        let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
-            MainActor.assumeIsolated {
-                guard context.coordinator.fileID == fileID, view.window != nil,
-                      let scroll = view.enclosingScrollView, let document = scroll.documentView else { return }
-                scroll.window?.contentView?.layoutSubtreeIfNeeded()
-                let bottom = view.convert(view.bounds, to: document).maxY
-                document.scrollToVisible(NSRect(x: 0, y: max(0, bottom - 64), width: 1, height: 64))
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if file.isVideo {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+            } else if let url = file.url {
+                FileThumbnailView(url: url)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
             }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(file.name).font(.callout.weight(.medium))
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(file.name)
+                Label(file.isVideo ? "변환 제외" : file.status.label, systemImage: statusIcon)
+                    .font(.caption).foregroundStyle(statusColor)
+                if let detail = file.detail, !detail.isEmpty {
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(2).help(detail)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
-        RunLoop.main.add(timer, forMode: .common)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(file.name)
+        .accessibilityValue([file.status.label, file.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
     }
-    final class Coordinator { var fileID: String? }
-}
 
-/// 네이티브 선택·키보드 동작을 유지하면서 작은 글꼴을 명시한다.
-private struct CompactSegments<Value: Hashable>: NSViewRepresentable {
-    let title: String
-    @Binding var selection: Value
-    let choices: [SegmentChoice<Value>]
+    private var statusIcon: String {
+        switch file.status {
+        case .ready: return "circle.dashed"
+        case .converting: return "arrow.triangle.2.circlepath"
+        case .completed: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.circle.fill"
+        case .unsupported: return "minus.circle"
+        }
+    }
 
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl()
-        control.segmentStyle = .rounded
-        control.trackingMode = .selectOne
-        control.controlSize = .small
-        control.font = .systemFont(ofSize: 11, weight: .medium)
-        control.target = context.coordinator
-        control.action = #selector(Coordinator.select(_:))
-        return control
-    }
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
-        control.segmentCount = choices.count
-        for (index, choice) in choices.enumerated() { control.setLabel(choice.title, forSegment: index) }
-        control.selectedSegment = choices.firstIndex { $0.value == selection } ?? -1
-        control.setAccessibilityLabel(title)
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    }
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-    final class Coordinator: NSObject {
-        var parent: CompactSegments
-        init(parent: CompactSegments) { self.parent = parent }
-        @objc func select(_ sender: NSSegmentedControl) {
-            guard parent.choices.indices.contains(sender.selectedSegment) else { return }
-            parent.selection = parent.choices[sender.selectedSegment].value
+    private var statusColor: Color {
+        switch file.status {
+        case .ready, .unsupported: return .secondary
+        case .converting: return .accentColor
+        case .completed: return .green
+        case .failed: return .red
         }
     }
 }
@@ -571,111 +272,6 @@ private struct PanelGlass: NSViewRepresentable {
         return view
     }
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) { nsView.alphaValue = opacity }
-}
-
-private struct GlassCard: ViewModifier {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.colorScheme) private var colorScheme
-    func body(content: Content) -> some View {
-        content.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity((reduceTransparency || contrast == .increased) ? 1 : (colorScheme == .dark ? 0.72 : 0.82)), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(contrast == .increased ? 0.4 : 0.08), lineWidth: 1).allowsHitTesting(false))
-    }
-}
-
-private extension View {
-    func glassCard() -> some View { modifier(GlassCard()) }
-}
-
-@MainActor private final class PanelPresentationState: ObservableObject {
-    enum DropFeedback { case idle, loading, accepted, rejected }
-    struct ConversionFeedback {
-        let id = UUID()
-        let destination: ConversionDestination
-    }
-    @Published var conversionFeedback: ConversionFeedback?
-    @Published var settingsExpanded = false
-    @Published var selectedPaths: Set<String> = []
-    @Published var revealFileID: String?
-    @Published var dropHovered = false
-    @Published var dropFeedback: DropFeedback = .idle
-    var latestDropID = UUID()
-}
-
-@MainActor private final class PanelButtonInteractionState: ObservableObject {
-    @Published var hovered = false
-}
-
-/// 창 활성 여부와 무관하게 상태 색과 공통 모서리를 유지한다.
-private struct PanelActionButtonStyle: ButtonStyle {
-    enum Tone { case neutral, accent, detection, destructive, conversion, success }
-    var tone: Tone = .neutral
-    var compact = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        PanelActionButtonBody(configuration: configuration, tone: tone, compact: compact)
-    }
-}
-
-private struct PanelActionButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-    let tone: PanelActionButtonStyle.Tone
-    let compact: Bool
-    @Environment(\.isEnabled) private var enabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @StateObject private var interaction = PanelButtonInteractionState()
-    private var hovered: Bool { interaction.hovered }
-
-    private var tint: Color {
-        switch tone {
-        case .accent: return .accentColor
-        case .detection: return .blue
-        case .destructive: return Color(red: 0.82, green: 0.12, blue: 0.18)
-        case .conversion: return .blue
-        case .success: return .green
-        case .neutral: return .primary
-        }
-    }
-    private var filled: Bool { tone == .accent || tone == .destructive || tone == .conversion || tone == .success }
-    private var showsFilledBackground: Bool { filled && (enabled || tone == .success) }
-    private var usesDarkFilledForeground: Bool {
-        guard tone == .accent || tone == .conversion || tone == .success,
-              let color = (tone == .success ? NSColor.systemGreen : tone == .conversion ? NSColor.systemBlue : NSColor.controlAccentColor).usingColorSpace(.sRGB) else { return false }
-        func linear(_ value: CGFloat) -> CGFloat {
-            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
-        }
-        let luminance = 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent)
-            + 0.0722 * linear(color.blueComponent)
-        return luminance > 0.179
-    }
-    private var filledForeground: Color { usesDarkFilledForeground ? .black : .white }
-    var body: some View {
-        configuration.label
-            .foregroundStyle(showsFilledBackground ? filledForeground : enabled ? tint : Color.secondary)
-            .padding(.horizontal, compact ? 8 : 10).padding(.vertical, compact ? 5 : 9)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(showsFilledBackground ? tint : tint.opacity(enabled ? (hovered ? 0.18 : 0.1) : 0.06))
-                    .overlay {
-                        if enabled && filled {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill((usesDarkFilledForeground ? Color.white : Color.black)
-                                    .opacity(configuration.isPressed ? 0.2 : hovered ? 0.12 : 0))
-                        } else if enabled && configuration.isPressed {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.12))
-                        }
-                    }.allowsHitTesting(false)
-            }
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(tint.opacity(enabled ? (hovered ? 0.45 : 0.2) : 0.08), lineWidth: 1).allowsHitTesting(false))
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .shadow(color: enabled && hovered ? tint.opacity(0.18) : .clear, radius: 3, y: 1)
-            .scaleEffect(enabled && configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .onHover { interaction.hovered = $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovered)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
-    }
 }
 
 private struct NeutralCloseButtonStyle: ButtonStyle {

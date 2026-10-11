@@ -1,7 +1,15 @@
 import Foundation
 import ConverterKit
 
-@MainActor final class WorkerClient {
+@MainActor protocol WorkerConnection: AnyObject {
+    var onEvent: ((WorkerEvent) -> Void)? { get set }
+    var onFailure: ((String) -> Void)? { get set }
+    func start() throws
+    func send(_ request: WorkerRequest) throws
+    func stop(afterExit: (() -> Void)?)
+}
+
+@MainActor final class WorkerClient: WorkerConnection {
     var onEvent: ((WorkerEvent) -> Void)?
     var onFailure: ((String) -> Void)?
     private var process: Process?
@@ -10,15 +18,17 @@ import ConverterKit
     private var generation = UUID()
     private var buffer = JSONLineBuffer()
     private var diagnostics = ""
+    private var exitCallbacks: [() -> Void] = []
+    private let executableOverride: URL?
+
+    init(executableURL: URL? = nil) { executableOverride = executableURL }
 
     func start() throws {
-        if stopping {
-            guard process?.isRunning != true else { throw WorkerFailure.stopping }
-            process = nil; stopping = false
-        }
+        if stopping { throw WorkerFailure.stopping }
         if process?.isRunning == true { return }
-        guard let resources = Bundle.main.resourceURL else { throw WorkerFailure.unavailable }
-        let executable = resources.appendingPathComponent("worker/heic-worker")
+        guard let executable = executableOverride ?? Bundle.main.resourceURL?.appendingPathComponent("worker/heic-worker") else {
+            throw WorkerFailure.unavailable
+        }
         guard FileManager.default.isExecutableFile(atPath: executable.path) else { throw WorkerFailure.unavailable }
         let task = Process()
         task.executableURL = executable
@@ -57,36 +67,32 @@ import ConverterKit
         try input.write(contentsOf: request.line())
     }
     func fail(_ message: String) { stop(); onFailure?(message) }
-    /// 종료된 worker만 임시 결과를 정리하도록 실제 프로세스 종료 뒤 콜백을 보낸다.
+    /// 프로세스가 끝날 때까지 파이프를 소비한다. 상태 정리가 끝난 뒤에만 콜백을 전달한다.
     func stop(afterExit: (() -> Void)? = nil) {
-        if let afterExit {
-            if let process, process.isRunning {
-                let previousHandler = process.terminationHandler
-                process.terminationHandler = { task in
-                    previousHandler?(task)
-                    DispatchQueue.main.async { afterExit() }
-                }
-            } else { afterExit() }
-        }
+        if let afterExit { exitCallbacks.append(afterExit) }
         if stopping { return }
+        stopping = true
         generation = UUID()
         try? input?.close(); input = nil
-        if let process {
-            (process.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-            (process.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-            if process.isRunning {
-                let previousHandler = process.terminationHandler
-                process.terminationHandler = { [weak self] task in
-                    previousHandler?(task)
-                    DispatchQueue.main.async {
-                        guard let self, self.process === task else { return }
-                        self.process = nil; self.stopping = false
-                    }
-                }
-                process.terminate()
-            }
+        guard let task = process, task.isRunning else {
+            finishStop(process)
+            return
         }
-        stopping = process?.isRunning == true
-        if !stopping { process = nil }
+        task.terminationHandler = { [weak self] task in
+            DispatchQueue.main.async { self?.finishStop(task) }
+        }
+        // 기존 readabilityHandler는 generation 검사 전에 availableData를 읽는다.
+        // 콜백 전달을 막아도 stdout/stderr는 실제 종료까지 계속 비운다.
+        task.terminate()
+    }
+
+    private func finishStop(_ task: Process?) {
+        guard task == nil || process === task else { return }
+        (task?.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        (task?.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        process = nil; stopping = false
+        let callbacks = exitCallbacks; exitCallbacks.removeAll()
+        // 이미 종료된 process도 호출자의 stop() 프레임이 돌아간 다음 전달한다.
+        DispatchQueue.main.async { callbacks.forEach { $0() } }
     }
 }

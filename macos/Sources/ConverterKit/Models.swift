@@ -127,12 +127,13 @@ public enum InputValidator {
 public enum ConversionDestination: String { case files, clipboard }
 
 public struct ConversionJob {
-    public let id = UUID().uuidString
+    public let id: String
     public let files: [String]
     public let outputDirectory: String
     public let options: ConversionOptions
     public let destination: ConversionDestination
-    public init(files: [String], settings: AppSettings, destination: ConversionDestination = .files) {
+    public init(id: String = UUID().uuidString, files: [String], settings: AppSettings, destination: ConversionDestination = .files) {
+        self.id = id
         self.files = files; outputDirectory = settings.outputDirectory; options = settings.options
         self.destination = destination
     }

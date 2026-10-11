@@ -4,173 +4,160 @@ import ConverterKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// 사용자 클립보드·설정을 건드리지 않고 실제 worker의 이미지 복사 경로를 검사한다.
-@MainActor func clipboardConversionSmokeTest() async -> Bool {
-    let name = "heic-copy-smoke-\(UUID().uuidString)"
-    let folder = URL(fileURLWithPath: InputValidator.canonicalPath(FileManager.default.temporaryDirectory)).appendingPathComponent(name)
-    let clipboard = NSPasteboard(name: NSPasteboard.Name(name))
+/// 일반 클립보드·개인 사진과 분리된 실제 내장 worker의 자동 변환 검증이다.
+@MainActor func clipboardConversionSmokeTest(worker: WorkerConnection? = nil,
+                                           onNotice: ((ClipboardConversionNotice?) -> Void)? = nil) async -> Bool {
+    let name = "heic-auto-worker-smoke-\(UUID().uuidString)"
+    let folder = URL(fileURLWithPath: InputValidator.canonicalPath(FileManager.default.temporaryDirectory), isDirectory: true).appendingPathComponent(name)
+    let board = NSPasteboard(name: .init(name))
     guard let defaults = UserDefaults(suiteName: name) else { return false }
-    let temporaryResults = folder.appendingPathComponent("임시 결과")
-    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults, clipboardRoot: temporaryResults)
+    let model = AppModel(startClipboard: false, pasteboard: board, defaults: defaults,
+                         clipboardRoot: folder.appendingPathComponent("results"), worker: worker)
+    let noticeSubscription = model.$conversionNotice.sink { onNotice?($0) }
     defer {
-        model.shutdown(); clipboard.releaseGlobally(); defaults.removePersistentDomain(forName: name)
-        try? FileManager.default.removeItem(at: folder)
+        noticeSubscription.cancel()
+        // 실패·시간 초과 경로도 worker가 종료된 다음에만 검증 파일을 삭제한다.
+        model.shutdown {
+            board.releaseGlobally(); defaults.removePersistentDomain(forName: name)
+            try? FileManager.default.removeItem(at: folder)
+        }
     }
-    func check(_ label: String, _ passed: Bool) -> Bool {
-        print("이미지 복사 검증 [\(label)]: \(passed ? "성공" : "실패")")
-        if !passed { print("복사 상태: \(model.message), \(model.queue.items.map { $0.status.rawValue })") }
-        return passed
+    func check(_ label: String, _ condition: Bool) -> Bool {
+        print("자동 변환 검증 [\(label)]: \(condition ? "성공" : "실패")")
+        if !condition { print("상태: \(model.message)") }
+        return condition
     }
-    func waitUntilIdle() async -> Bool {
+    func idle() async -> Bool {
         let deadline = Date().addingTimeInterval(30)
         while model.active && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
-        return check("작업 종료", !model.active && model.queue.jobs.isEmpty)
+        return check("worker 작업 종료", !model.active)
     }
-    func add(_ urls: [URL]) { model.stage(urls); model.acceptStaged(convert: false) }
-    func noTemporaryImages() -> Bool {
-        let files = FileManager.default.enumerator(at: temporaryResults, includingPropertiesForKeys: nil)
-        return !(files?.allObjects as? [URL] ?? []).contains { ["jpeg", "png", "jpg"].contains($0.pathExtension.lowercased()) }
+    func copy(_ urls: [URL], text: String? = nil) -> Bool {
+        let items = urls.map { url -> NSPasteboardItem in
+            let item = NSPasteboardItem(); item.setString(url.absoluteString, forType: .fileURL); return item
+        }
+        var all = items
+        if let text {
+            let item = NSPasteboardItem(); item.setString(text, forType: .string); all.append(item)
+        }
+        board.clearContents()
+        let written = board.writeObjects(all)
+        model.pollClipboard()
+        return written
     }
     do {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let first = folder.appendingPathComponent("첫 이미지.heic")
-        let second = folder.appendingPathComponent("둘째 이미지.heic")
-        guard let context = CGContext(data: nil, width: 24, height: 16, bitsPerComponent: 8, bytesPerRow: 96,
-                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+        let source = folder.appendingPathComponent("합성 원본.heic")
+        let second = folder.appendingPathComponent("합성 둘째.heic")
+        let other = folder.appendingPathComponent("보존 문서.txt")
+        let context = CGContext(data: nil, width: 24, height: 16, bitsPerComponent: 8, bytesPerRow: 96,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
         context.setFillColor(CGColor(red: 0.15, green: 0.65, blue: 0.4, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 24, height: 16))
-        guard let image = context.makeImage(),
-              let encoder = CGImageDestinationCreateWithURL(first as CFURL, UTType.heic.identifier as CFString, 1, nil) else { return false }
-        CGImageDestinationAddImage(encoder, image, nil)
+        let encoder = CGImageDestinationCreateWithURL(source as CFURL, UTType.heic.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(encoder, context.makeImage()!, nil)
         guard CGImageDestinationFinalize(encoder) else { return false }
-        let original = try Data(contentsOf: first)
-        try original.write(to: second)
-        let saveDirectory = folder.appendingPathComponent("사용자 저장 폴더")
-        model.settings.outputDirectory = saveDirectory.path
-        clipboard.clearContents(); clipboard.setString("기존 복사 내용", forType: .string)
-        add([first, second]); model.startWaiting(destination: .clipboard)
-        guard await waitUntilIdle(), check("JPEG 다중 이미지·파일 미저장", model.queue.items.map(\.status) == [.succeeded, .succeeded]
-            && clipboard.pasteboardItems?.count == 2
-            && clipboard.pasteboardItems?.allSatisfy({ item in
-                item.data(forType: NSPasteboard.PasteboardType(UTType.jpeg.identifier)) != nil
-                    && item.data(forType: .tiff) != nil && !item.types.contains(.fileURL)
-            }) == true && !FileManager.default.fileExists(atPath: saveDirectory.path) && noTemporaryImages()) else { return false }
-        let copiedData = clipboard.pasteboardItems?.first?.data(forType: .tiff)
-        guard let copiedData, let copiedImage = NSBitmapImageRep(data: copiedData),
-              check("복사 이미지 크기", copiedImage.pixelsWide == 24 && copiedImage.pixelsHigh == 16) else { return false }
+        let original = try Data(contentsOf: source)
+        try original.write(to: second); try Data("문서".utf8).write(to: other)
+        let poster = folder.appendingPathComponent("합성 동영상 미리보기.jpeg")
+        let jpegEncoder = CGImageDestinationCreateWithURL(poster as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(jpegEncoder, context.makeImage()!, nil)
+        guard CGImageDestinationFinalize(jpegEncoder) else { return false }
+        let posterData = try Data(contentsOf: poster)
+        let assetType = NSPasteboard.PasteboardType("com.apple.photos.object-reference.asset")
+        let assetData = try PropertyListSerialization.data(fromPropertyList: ["mediaType": 2, "mediaSubtypes": 0], format: .binary, options: 0)
+        func videoItem(raw: Bool) -> NSPasteboardItem {
+            let item = NSPasteboardItem()
+            item.setData(assetData, forType: assetType)
+            item.setString(poster.absoluteString, forType: .fileURL)
+            item.setData(posterData, forType: .init(UTType.jpeg.identifier))
+            if raw { item.setData(original, forType: .init(UTType.heic.identifier)) }
+            return item
+        }
+        for raw in [false, true] {
+            board.clearContents(); guard board.writeObjects([videoItem(raw: raw)]) else { return false }
+            let generation = board.changeCount
+            model.pollClipboard()
+            guard check("Photos 동영상 미리보기 변환 제외 (HEIC \(raw))", !model.active
+                && model.conversionNotice == nil && model.clipboardFiles.first?.isVideo == true
+                && board.changeCount == generation && board.pasteboardItems?.first?.data(forType: assetType) == assetData
+                && board.pasteboardItems?.first?.data(forType: .init(UTType.jpeg.identifier)) == posterData) else { return false }
+        }
+        let heicItem = NSPasteboardItem(); heicItem.setString(source.absoluteString, forType: .fileURL)
+        let movie = videoItem(raw: true)
+        let movieTypes = movie.types
+        let movieBytes = movieTypes.map { movie.data(forType: $0) }
+        board.clearContents(); guard board.writeObjects([heicItem, movie]) else { return false }
         model.pollClipboard()
-        guard check("자체 복사 재입력 없음", model.queue.items.count == 2 && model.notices.isEmpty) else { return false }
-        model.removeAll()
-
-        // 연속 복사 예약은 앱 자신의 이전 복사 세대만 이어받아 각각 완료한다.
-        add([first]); model.startWaiting(destination: .clipboard)
-        add([second]); model.startWaiting(destination: .clipboard)
-        guard await waitUntilIdle(), check("연속 이미지 복사 예약", model.queue.items.map(\.status) == [.succeeded, .succeeded]
-            && clipboard.pasteboardItems?.count == 1 && noTemporaryImages()) else { return false }
-        model.removeAll()
-
-        // 임시 파일명 충돌은 이미지 복사에서 입력을 건너뛰거나 실패시키지 않는다.
-        let duplicateFolder = folder.appendingPathComponent("다른 폴더")
-        try FileManager.default.createDirectory(at: duplicateFolder, withIntermediateDirectories: true)
-        let duplicate = duplicateFolder.appendingPathComponent(first.lastPathComponent)
-        try original.write(to: duplicate)
-        model.settings.options.onConflict = "skip"
-        add([first, duplicate]); model.startWaiting(destination: .clipboard)
-        guard await waitUntilIdle(), check("동일 이름 이미지 모두 복사", model.queue.items.map(\.status) == [.succeeded, .succeeded]
-            && clipboard.pasteboardItems?.count == 2 && noTemporaryImages()
-            && model.settings.options.onConflict == "skip") else { return false }
-        model.removeAll()
-
-        let corrupt = folder.appendingPathComponent("손상.heic")
-        try Data([1, 2, 3]).write(to: corrupt)
+        guard await idle(), check("HEIC·Photos 동영상 혼합에서 사진만 변환", model.conversionNotice?.heicCount == 1
+            && model.conversionNotice?.completedCount == 1 && board.pasteboardItems?.count == 2
+            && board.pasteboardItems?.last?.types == movieTypes
+            && movieTypes.map { board.pasteboardItems?.last?.data(forType: $0) } == movieBytes
+            && model.clipboardFiles.last?.isVideo == true) else { return false }
+        guard copy([source, other, second], text: "혼합 텍스트"), await idle() else { return false }
+        let items = try XCTSmokeItems(board)
+        let results = [items[0], items[2]].compactMap { $0.string(forType: .fileURL).flatMap(URL.init(string:)) }
+        guard check("혼합 순서·텍스트·타파일 보존", items.count == 4
+            && items[1].string(forType: .fileURL) == other.absoluteString && items[3].string(forType: .string) == "혼합 텍스트"),
+              check("다중 JPEG 파일·이미지 동시 게시", results.count == 2 && results.allSatisfy { $0.pathExtension == "jpeg" || $0.pathExtension == "jpg" }
+                && [items[0], items[2]].allSatisfy { $0.data(forType: .init(UTType.jpeg.identifier)) != nil }),
+              check("게시 파일 수명", results.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }) else { return false }
+        model.pollClipboard()
+        guard check("자체 게시 루프 없음", !model.active && model.clipboardFiles.count == 3) else { return false }
+        model.setClipboard(false)
+        guard check("끄기 후 결과 유지", results.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }) else { return false }
+        model.setClipboard(true)
+        let corrupt = folder.appendingPathComponent("손상.heic"); try Data([1, 2, 3]).write(to: corrupt)
+        guard copy([source, corrupt]) else { return false }
+        let failedCount = board.changeCount
+        guard await idle(), check("부분 실패 전체 원본 유지", board.changeCount == failedCount
+            && board.pasteboardItems?.first?.string(forType: .fileURL) == source.absoluteString),
+              check("새 복사 후 이전 결과 정리", results.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) }) else { return false }
+        // 원본의 길이와 worker 원자 저장용 파일명의 길이는 별도로 검증한다.
+        let longNames = [String(repeating: "a", count: 250) + ".heic",
+                         String(repeating: "한", count: 83) + "a.heic"]
+        let longSources = try longNames.map { filename -> URL in
+            guard filename.utf8.count == 255 else { throw WorkerFailure.invalidEvent }
+            let url = folder.appendingPathComponent(filename)
+            try original.write(to: url)
+            return url
+        }
+        // 같은 경로의 중복도 별도 결과로 만들고 ASCII·한글 255바이트 이름을 두 형식으로 변환한다.
+        let longInputs = [longSources[0], longSources[0], longSources[1]]
+        for format in ["jpeg", "png"] {
+            model.settings.options.outputFormat = format
+            guard copy(longInputs), check("255바이트 원본의 표시명 유지 (\(format))",
+                model.clipboardFiles.map(\.name) == longInputs.map(\.lastPathComponent)), await idle() else { return false }
+            let published = board.pasteboardItems ?? []
+            let outputs = published.compactMap { $0.string(forType: .fileURL).flatMap(URL.init(string:)) }
+            let outputType = NSPasteboard.PasteboardType(format == "jpeg" ? UTType.jpeg.identifier : UTType.png.identifier)
+            guard check("255바이트 이름·중복 원본의 실제 worker 변환 (\(format))",
+                model.clipboardFiles.allSatisfy { $0.status == .completed }
+                && model.conversionNotice?.phase == .completed && model.conversionNotice?.completedCount == 3
+                && published.count == 3 && outputs.count == 3 && Set(outputs).count == 3
+                && published.allSatisfy { $0.data(forType: outputType) != nil }) else { return false }
+            for url in outputs {
+                guard check("긴 원본의 결과 파일 확인 (\(format))",
+                    FileManager.default.fileExists(atPath: url.path)
+                    && CGImageSourceCreateWithURL(url as CFURL, nil) != nil) else { return false }
+            }
+            for url in longSources {
+                guard try Data(contentsOf: url) == original else { return false }
+            }
+        }
         model.settings.options.outputFormat = "png"
-        add([corrupt, first]); model.startWaiting(destination: .clipboard)
-        guard await waitUntilIdle(), check("PNG 부분 실패·성공 이미지 복사", model.queue.items.map(\.status) == [.failed, .succeeded]
-            && clipboard.pasteboardItems?.count == 1
-            && clipboard.data(forType: .png) != nil && noTemporaryImages()
-            && !FileManager.default.fileExists(atPath: saveDirectory.path)) else { return false }
-        model.removeAll()
+        guard copy([source]), await idle(), check("PNG 자동 변환", board.pasteboardItems?.first?.data(forType: .png) != nil) else { return false }
+        var closed = false
+        model.shutdown { closed = true }
+        let deadline = Date().addingTimeInterval(10)
+        while !closed && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        let sourcePreserved = try Data(contentsOf: source) == original
+        return check("정상 종료 원본 복구", closed && board.pasteboardItems?.first?.string(forType: .fileURL) == source.absoluteString)
+            && check("합성 원본 바이트 보존", sourcePreserved)
+    } catch { print("자동 변환 smoke 오류: \(error.localizedDescription)"); return false }
+}
 
-        // 명시적 복사 요청 후 사용자가 새 내용을 복사했으면 늦은 결과로 덮어쓰지 않는다.
-        add([first]); model.startWaiting(destination: .clipboard)
-        clipboard.clearContents(); clipboard.setString("사용자가 새로 복사한 내용", forType: .string)
-        guard await waitUntilIdle(), check("변환 도중 클립보드 변경 보존", model.queue.items.first?.status == .failed
-            && clipboard.string(forType: .string) == "사용자가 새로 복사한 내용" && noTemporaryImages()) else { return false }
-        model.selectedDestination = .files
-        model.retryFailures()
-        guard await waitUntilIdle(), check("재시도 복사 방식 보존", model.queue.items.first?.status == .succeeded
-            && clipboard.data(forType: .png) != nil && !FileManager.default.fileExists(atPath: saveDirectory.path)
-            && noTemporaryImages()) else { return false }
-        model.removeAll()
-
-        clipboard.clearContents(); clipboard.setString("취소 전 내용", forType: .string)
-        add([first]); model.startWaiting(destination: .clipboard); model.cancel()
-        guard await waitUntilIdle(), check("복사 취소·기존 내용 보존", model.queue.items.first?.status == .waiting
-            && clipboard.string(forType: .string) == "취소 전 내용" && noTemporaryImages()) else { return false }
-        model.removeAll()
-
-        // 마지막 파일 처리 중 취소는 worker가 completed를 보내도 이미지를 게시하지 않는다.
-        clipboard.clearContents(); clipboard.setString("마지막 파일 취소 전 내용", forType: .string)
-        var cancellationSent = false
-        let cancellationObserver = model.$queue.sink { queue in
-            if !cancellationSent, queue.activeJob?.destination == .clipboard,
-               queue.items.contains(where: { $0.status == .running }) {
-                cancellationSent = true; model.cancel()
-            }
-        }
-        add([first]); model.startWaiting(destination: .clipboard)
-        add([second]); model.startWaiting(destination: .files)
-        guard await waitUntilIdle(), check("마지막 파일 취소·후속 저장 예약", cancellationSent
-            && model.queue.items.map(\.status) == [.waiting, .succeeded]
-            && clipboard.string(forType: .string) == "마지막 파일 취소 전 내용" && noTemporaryImages()) else { return false }
-        cancellationObserver.cancel()
-        model.removeAll()
-
-        let removed = folder.appendingPathComponent("실행 전 삭제.heic")
-        try original.write(to: removed); add([removed]); try FileManager.default.removeItem(at: removed)
-        model.startWaiting(destination: .clipboard)
-        guard await waitUntilIdle(), check("전체 거절·기존 내용 보존", model.queue.items.first?.status == .failed
-            && clipboard.string(forType: .string) == "마지막 파일 취소 전 내용" && noTemporaryImages()) else { return false }
-        model.removeAll()
-
-        // 복사와 저장 예약이 섞여도 모드와 당시 PNG 옵션·폴더를 유지한다.
-        let mixedSaveDirectory = folder.appendingPathComponent("혼합 저장 폴더")
-        model.settings.outputDirectory = mixedSaveDirectory.path
-        add([first]); model.startWaiting(destination: .clipboard)
-        add([second]); model.startWaiting(destination: .files)
-        model.settings.options.outputFormat = "jpeg"
-        model.settings.outputDirectory = folder.appendingPathComponent("나중 설정").path
-        guard await waitUntilIdle(), check("복사·저장 예약 분리", model.queue.items.map(\.status) == [.succeeded, .succeeded]
-            && model.queue.items.first?.destination == nil
-            && model.queue.items.last?.destination?.hasSuffix(".png") == true
-            && FileManager.default.fileExists(atPath: mixedSaveDirectory.appendingPathComponent(second.deletingPathExtension().lastPathComponent + ".png").path)
-            && !FileManager.default.fileExists(atPath: mixedSaveDirectory.appendingPathComponent(first.deletingPathExtension().lastPathComponent + ".png").path)
-            && noTemporaryImages()),
-              check("합성 원본 보존", try Data(contentsOf: first) == original && Data(contentsOf: second) == original) else { return false }
-        let dataAfterCopy = clipboard.data(forType: .png)
-        model.shutdown()
-        guard check("앱 종료 후 이미지 데이터 유지", dataAfterCopy != nil && clipboard.data(forType: .png) == dataAfterCopy) else { return false }
-
-        let stopRoot = folder.appendingPathComponent("종료 정리")
-        let stoppingModel = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults, clipboardRoot: stopRoot)
-        var stopRequested = false
-        var stopped = false
-        let stopObserver = stoppingModel.$queue.sink { queue in
-            if !stopRequested, queue.items.contains(where: { $0.status == .running }) {
-                stopRequested = true
-                stoppingModel.shutdown { stopped = true }
-            }
-        }
-        stoppingModel.stage([first]); stoppingModel.acceptStaged(convert: false)
-        stoppingModel.startWaiting(destination: .clipboard)
-        let stopDeadline = Date().addingTimeInterval(10)
-        while !stopped && Date() < stopDeadline { try? await Task.sleep(for: .milliseconds(20)) }
-        stopObserver.cancel()
-        let leftovers = FileManager.default.enumerator(at: stopRoot, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
-        return check("worker 종료 후 임시 결과 정리", stopped && stopRequested && leftovers.isEmpty
-            && clipboard.data(forType: .png) == dataAfterCopy)
-    } catch {
-        fputs("이미지 복사 검증 실패: \(error.localizedDescription)\n", stderr)
-        return false
-    }
+@MainActor private func XCTSmokeItems(_ board: NSPasteboard) throws -> [NSPasteboardItem] {
+    guard let items = board.pasteboardItems, items.count == 4 else { throw WorkerFailure.invalidEvent }
+    return items
 }

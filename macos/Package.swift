@@ -9,5 +9,6 @@ let package = Package(
         .target(name: "ConverterKit"),
         .executableTarget(name: "HEICConverter", dependencies: ["ConverterKit"]),
         .testTarget(name: "ConverterKitTests", dependencies: ["ConverterKit"]),
+        .testTarget(name: "HEICConverterTests", dependencies: ["HEICConverter", "ConverterKit"]),
     ]
 )
