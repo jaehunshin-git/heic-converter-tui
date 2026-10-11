@@ -4,24 +4,24 @@ import CoreGraphics
 
 final class PanelPlacementTests: XCTestCase {
     func testFileHeightGrowsForThumbnailsAndStopsAfterThreeRows() {
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0), 520)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0), 620)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 2, stagedCount: 0), 684)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0), 748)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 0), 748)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 5), 700)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5), 800)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0), 532)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0), 632)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 2, stagedCount: 0), 696)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0), 760)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 0), 760)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 5), 712)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5), 812)
     }
 
     func testExpandedSettingsPreserveThumbnailSpace() {
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true), 656)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0, settingsExpanded: true), 756)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true), 884)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5, settingsExpanded: true), 936)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 684)
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 912)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true), 668)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0, settingsExpanded: true), 768)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true), 896)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 100, stagedCount: 5, settingsExpanded: true), 948)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 696)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: true, outputFormat: "png"), 924)
         // 펼침 상태를 되돌리면 기존 간결한 높이 정책으로 돌아간다.
-        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: false), 748)
+        XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0, settingsExpanded: false), 760)
     }
 
     func testExpandedSettingsFitScreenWithoutMovingTopOrChangingWidth() {
@@ -57,9 +57,9 @@ final class PanelPlacementTests: XCTestCase {
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
         let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                          size: PanelPlacement.defaultSize)
-        XCTAssertEqual(frame.size, CGSize(width: 420, height: 520))
+        XCTAssertEqual(frame.size, CGSize(width: 420, height: 532))
         XCTAssertEqual(frame.midX, anchor.midX)
-        XCTAssertEqual(frame.maxY, anchor.minY - 8)
+        XCTAssertEqual(frame.maxY, anchor.minY - 3)
         XCTAssertTrue(visible.contains(frame))
     }
 
@@ -69,8 +69,10 @@ final class PanelPlacementTests: XCTestCase {
             let anchor = CGRect(x: iconX, y: 878, width: 30, height: 22)
             let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                              size: CGSize(width: 520, height: 650))
-            XCTAssertTrue(visible.insetBy(dx: 8, dy: 8).contains(frame))
-            XCTAssertEqual(frame.maxY, 870)
+            XCTAssertTrue(visible.contains(frame))
+            XCTAssertGreaterThanOrEqual(frame.minX, visible.minX + 8)
+            XCTAssertLessThanOrEqual(frame.maxX, visible.maxX - 8)
+            XCTAssertEqual(frame.maxY, 875)
         }
     }
 
@@ -79,9 +81,9 @@ final class PanelPlacementTests: XCTestCase {
         let anchor = CGRect(x: -220, y: 856, width: 34, height: 24)
         let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                          size: CGSize(width: 520, height: 650))
-        XCTAssertTrue(visible.insetBy(dx: 8, dy: 8).contains(frame))
+        XCTAssertTrue(visible.contains(frame))
         XCTAssertEqual(frame.maxX, visible.maxX - 8)
-        XCTAssertEqual(frame.maxY, anchor.minY - 8)
+        XCTAssertEqual(frame.maxY, anchor.minY - 3)
     }
 
     func testSmallDisplayShrinksPanelInsteadOfCoveringMenuBarOrDock() {
@@ -89,8 +91,9 @@ final class PanelPlacementTests: XCTestCase {
         let anchor = CGRect(x: 1800, y: 500, width: 30, height: 24)
         let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                          size: CGSize(width: 520, height: 650))
-        XCTAssertEqual(frame.size, CGSize(width: 404, height: 384))
-        XCTAssertTrue(visible.insetBy(dx: 8, dy: 8).contains(frame))
+        XCTAssertEqual(frame.size, CGSize(width: 404, height: 389))
+        XCTAssertTrue(visible.contains(frame))
+        XCTAssertEqual(frame.minY, visible.minY + 8)
     }
 
     func testResizeKeepsTopAttachedAndNotchedMenuBarRemainsClear() {
@@ -103,5 +106,24 @@ final class PanelPlacementTests: XCTestCase {
         XCTAssertEqual(compact.maxY, expanded.maxY)
         XCTAssertEqual(compact.midX, expanded.midX)
         XCTAssertLessThan(expanded.maxY, anchor.minY)
+    }
+
+    func testPointerFollowsIconWhenPanelIsClampedOrResized() {
+        let visible = CGRect(x: -1440, y: 0, width: 1440, height: 878)
+        let anchor = CGRect(x: -90, y: 878, width: 50, height: 22)
+        let iconX: CGFloat = -78
+        for width in [CGFloat(380), 420, 660] {
+            let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
+                                            size: CGSize(width: width, height: 532))
+            XCTAssertEqual(frame.minX + PanelPlacement.pointerCenter(anchorX: iconX, panelFrame: frame), iconX)
+        }
+    }
+
+    func testPointerAvoidsRoundedCornersOnTinyScreens() {
+        let frame = CGRect(x: 100, y: 0, width: 380, height: 532)
+        let margin = PanelPlacement.cornerRadius + PanelPlacement.pointerWidth / 2 + 4
+        XCTAssertEqual(PanelPlacement.pointerCenter(anchorX: 100, panelFrame: frame), margin)
+        XCTAssertEqual(PanelPlacement.pointerCenter(anchorX: 500, panelFrame: frame), frame.width - margin)
+        XCTAssertEqual(PanelPlacement.pointerCenter(anchorX: 500, panelFrame: CGRect(x: 0, y: 0, width: 40, height: 50)), 20)
     }
 }

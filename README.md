@@ -94,11 +94,14 @@ For a checkout awaiting release, build the app with the
    depending on visibility, and **Quit**.
 
 The panel opens directly below its menu bar icon and stays within the current
-screen's available area. The compact panel defaults to 420 × 520 points, with a
-380 × 520 minimum. Settings start collapsed, with the small JPEG/PNG selector,
+screen's available area. A small rounded pointer connects the panel visually to
+the menu bar icon and follows it when the panel is clamped to a screen edge.
+The compact panel defaults to 420 × 532 points, with a 380 × 532 minimum;
+the 12-point pointer sits above the existing content area. Settings start collapsed,
+with the small JPEG/PNG selector,
 quality or PNG compression, and right-aligned destination on one line below the
 header. Adding files increases the panel height to show thumbnails; the first three
-rows expand it to 620, 684, and 748 points. Longer lists scroll to the newest files,
+rows expand it to 632, 696, and 760 points. Longer lists scroll to the newest files,
 and the panel stays within the available screen area. Removing files reduces the
 automatic height, while a taller manually resized window is preserved. Expanding
 settings also increases the automatic height so the file list stays visible;
