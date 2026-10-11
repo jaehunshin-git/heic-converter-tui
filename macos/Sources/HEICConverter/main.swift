@@ -486,6 +486,15 @@ final class ClipboardPanel: NSPanel {
         func show(_ value: ClipboardConversionNotice, onOpen: @escaping () -> Void = {}) {
             controller.show(value, anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, onOpen: onOpen)
         }
+        func waitForDismissal() async -> Bool {
+            // RunLoop Timer와 Task 재개 순서는 CI 부하에 따라 달라질 수 있다.
+            // 임의의 50ms 여유 대신 실제 닫힘을 기다리되 미동작은 시간 제한으로 실패시킨다.
+            let deadline = Date().addingTimeInterval(2)
+            while controller.isVisible && Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return !controller.isVisible
+        }
         func render(_ filename: String) {
             if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"] {
                 do { try controller.render(to: URL(fileURLWithPath: directory).appendingPathComponent(filename)) }
@@ -542,11 +551,9 @@ final class ClipboardPanel: NSPanel {
         check("두 줄 실패 안내 높이 반영", controller.frame.height > shortFailureFrame.height
             && controller.frame.maxY == shortFailureFrame.maxY)
         print("알림 실측 높이: 짧은 실패 \(shortFailureFrame.height), 두 줄 실패 \(controller.frame.height)pt")
-        try? await Task.sleep(nanoseconds: 400_000_000)
-        check("실패 자동 닫힘", !controller.isVisible)
+        check("실패 자동 닫힘", await waitForDismissal())
         show(notice(.completed))
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        check("완료 자동 닫힘", !controller.isVisible)
+        check("완료 자동 닫힘", await waitForDismissal())
         var opened = false
         show(notice(.preparing)) { [self] in opened = true; togglePanel() }
         controller.openDetails()
