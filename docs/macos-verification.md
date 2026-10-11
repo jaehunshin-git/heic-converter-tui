@@ -777,11 +777,21 @@ Python 128개·Swift XCTest 74개·Ruff, 앱/DMG 설치 복사본의 자동 변�
   개수·중복 없음과 비HEIC 파일의 SHA-256 보존을 확인했다. 카카오톡은 전송 전
   미리보기에서 1개·6개를 확인하고 취소했다. 실제 메시지는 보내지 않았다.
 - Photos 전용 검증 앨범의 합성 원본·편집 사진은 JPEG로 복사됐다. 혼합 3장을
-  Finder에 붙여넣어 JPEG 파일 3개를 확인했다. 개인 클립보드는 검증 전 상태로 복구했다.
+  Finder에 붙여넣어 JPEG 파일 3개를 확인했다. 검증 전 클립보드의 사진·메타데이터
+  바이트는 복구됐으나 Photos 파일 URL의 복구 도구 종료 후 보존은 확인하지 못했다.
 - 최종 소스로 앱과 HFS+ DMG를 다시 만들었다. 실제 worker의 JPEG/PNG 및 255바이트
   ASCII·한글·emoji 이름과 중복 입력, 설치 복사본 패널·알림·자동 변환 smoke,
   Mach-O 44개·서명·로더·SDR/HDR·SHA-256 검증을 통과했다.
 - 최종 README로 wheel/sdist를 다시 빌드해 버전 0.3.0·영문 설명·배포 허용 목록을 확인했다.
-- macOS 15/26의 같은 커밋 검증은 CI 결과로 별도 기록한다. iCloud 미다운로드 자산,
+- macOS 15/26 Apple Silicon에서 커밋 `bdbde95`의 Python 136개·Swift 93개·Ruff·앱 빌드·
+  DMG 설치 smoke·wheel/sdist 검증과 산출물 업로드가 모두 통과했다.
+  [CI 실행 기록](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
+  iCloud 미다운로드 자산,
   Photos 드래그 파일 약속, 실제 채팅 전달의 미검증 범위는
   [PR 준비 기록](macos-issue7-pr-readiness.md)에 명시했다.
+- 후속 종료 검증에서는 별도 named pasteboard의 합성 URL·Photos 메타데이터·raw를
+  144조건으로 비교했고 종료 후에도 타입·바이트·세대가 보존됐다. 저장소의 실제
+  capture→publish→shutdown→프로세스 종료 비교도 합성 혼합 입력에서 통과했다.
+  일반 클립보드의 실제 Photos URL은 복구 도구 종료 후 사라지는 현상이 별도로 남는다.
+  파일 존재·flush 비교만으로 원인을 설명하지 못했으며 앱 자체 정상 종료의 Photos
+  URL 보존까지 통과했다고 주장하지 않는다.
