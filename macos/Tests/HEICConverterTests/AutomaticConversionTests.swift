@@ -22,6 +22,27 @@ import XCTest
 }
 
 final class AutomaticConversionTests: XCTestCase {
+    private struct Representation: Equatable {
+        let type: NSPasteboard.PasteboardType
+        let data: Data
+    }
+    private final class CountingData: NSObject, NSPasteboardItemDataProvider {
+        let values: [NSPasteboard.PasteboardType: Data]
+        var requests: [NSPasteboard.PasteboardType] = []
+        init(_ values: [NSPasteboard.PasteboardType: Data]) { self.values = values }
+        func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+                        provideDataForType type: NSPasteboard.PasteboardType) {
+            requests.append(type)
+            if let data = values[type] { item.setData(data, forType: type) }
+        }
+    }
+
+    @MainActor private func contents(_ board: NSPasteboard) throws -> [[Representation]] {
+        try XCTUnwrap(board.pasteboardItems).map { item in
+            try item.types.map { Representation(type: $0, data: try XCTUnwrap(item.data(forType: $0))) }
+        }
+    }
+
     private enum MovieRepresentation: CaseIterable {
         case publicURL, fileURL, movie, quickTimeMovie, filenames
     }
@@ -277,6 +298,182 @@ final class AutomaticConversionTests: XCTestCase {
             XCTAssertEqual(preserved.types, types, entry.name)
             XCTAssertEqual(types.map { preserved.data(forType: $0) }, bytes.map { Optional($0) }, entry.name)
         }
+    }
+
+    @MainActor func testUnsafePhotosPromisePollingAndShutdownNeverRequestProviderData() throws {
+        // 모델의 정리 → capture 거절 → 오류 미리보기 경로를 합성 provider로 검증한다.
+        // 실제 Photos 약속 수신이나 운영체제의 클립보드 동작을 재현하지 않는다.
+        let assetType = NSPasteboard.PasteboardType("com.apple.photos.object-reference.asset")
+        let rawType = NSPasteboard.PasteboardType(UTType.heic.identifier)
+        for unsafeType in [NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+                           NSPasteboard.PasteboardType("com.apple.NSFilePromiseItemMetaData")] {
+            for hasHEIC in [false, true] {
+                let f = try Fixture(); defer { f.close() }
+                let originalSource = try Data(contentsOf: f.source)
+                let libraryURL = f.root.appendingPathComponent("합성.photoslibrary/originals/원본.heic")
+                let asset = try PropertyListSerialization.data(fromPropertyList: ["mediaType": 1, "mediaSubtypes": 0],
+                                                               format: .binary, options: 0)
+                let provider = CountingData([
+                    .fileURL: Data(libraryURL.absoluteString.utf8), .URL: Data(libraryURL.absoluteString.utf8),
+                    assetType: asset, rawType: originalSource, unsafeType: Data("합성 약속".utf8),
+                ])
+                var types: [NSPasteboard.PasteboardType] = [.fileURL, .URL, assetType]
+                if hasHEIC { types.append(rawType) }
+                types.append(unsafeType)
+                let photos = NSPasteboardItem()
+                XCTAssertTrue(photos.setDataProvider(provider, forTypes: types))
+                let text = NSPasteboardItem()
+                XCTAssertTrue(text.setString("앞선 텍스트 유지", forType: .string))
+                f.board.clearContents(); XCTAssertTrue(f.board.writeObjects([text, photos]))
+                let generation = f.board.changeCount
+                let originalTypes = try XCTUnwrap(f.board.pasteboardItems).map(\.types)
+                let boardTypes = f.board.types
+                XCTAssertTrue(provider.requests.isEmpty)
+                var notices: [ClipboardConversionNotice] = []
+                let subscription = f.model.$conversionNotice.compactMap { $0 }.sink { notices.append($0) }
+                defer { subscription.cancel() }
+
+                f.model.pollClipboard()
+                f.model.pollClipboard()
+
+                XCTAssertTrue(provider.requests.isEmpty, "폴링 전체에서 URL·asset·raw·약속 provider 요청이 없어야 합니다.")
+                XCTAssertTrue(f.worker.requests.isEmpty)
+                XCTAssertFalse(f.model.active)
+                XCTAssertEqual(f.model.clipboardFiles.count, 1)
+                let display = try XCTUnwrap(f.model.clipboardFiles.first)
+                XCTAssertEqual(display.name, "파일 약속 항목 2")
+                XCTAssertNil(display.url)
+                XCTAssertEqual(display.status, .unsupported)
+                XCTAssertFalse(display.isVideo)
+                XCTAssertEqual(display.detail, AutomaticClipboardError.unsupportedRepresentation.localizedDescription)
+                XCTAssertTrue(f.model.message.contains("지원하지 않는 클립보드"))
+                if hasHEIC {
+                    let notice = try XCTUnwrap(f.model.conversionNotice)
+                    XCTAssertEqual(notices.count, 1)
+                    XCTAssertEqual(notice.phase, .failed)
+                    XCTAssertEqual(notice.sourceChangeCount, generation)
+                    XCTAssertEqual(notice.copiedFileCount, 1)
+                    XCTAssertEqual(notice.heicCount, 1)
+                    XCTAssertEqual(notice.completedCount, 0)
+                    XCTAssertEqual(notice.detail, "HEIC를 읽을 수 없습니다. 전체 원본을 유지했습니다.")
+                } else {
+                    XCTAssertNil(f.model.conversionNotice)
+                    XCTAssertTrue(notices.isEmpty)
+                }
+                XCTAssertEqual(f.board.changeCount, generation)
+                XCTAssertEqual(f.board.types, boardTypes)
+                XCTAssertEqual(try XCTUnwrap(f.board.pasteboardItems).map(\.types), originalTypes)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("managed").path))
+
+                let message = f.model.message
+                f.model.shutdown()
+                XCTAssertTrue(f.worker.stopped)
+                XCTAssertTrue(f.worker.requests.isEmpty)
+                XCTAssertTrue(provider.requests.isEmpty)
+                XCTAssertEqual(f.model.clipboardFiles.first?.status, .unsupported)
+                XCTAssertEqual(f.model.message, message)
+                XCTAssertNil(f.model.conversionNotice)
+                XCTAssertEqual(f.board.changeCount, generation)
+                XCTAssertEqual(f.board.types, boardTypes)
+                XCTAssertEqual(try XCTUnwrap(f.board.pasteboardItems).map(\.types), originalTypes)
+                XCTAssertEqual(try Data(contentsOf: f.source), originalSource)
+            }
+        }
+    }
+
+    @MainActor func testPhotosLibraryURLFailsClosedForMixedPhotoAndVideoThroughShutdown() throws {
+        // 합성 입력으로 자동 변경 금지 계약을 검증한다. 실제 Photos의 URL 유실이나 OS 원인을 재현하지 않는다.
+        for urlType in [NSPasteboard.PasteboardType.fileURL, .URL] {
+            for mediaType in [1, 2] {
+                for photosFirst in [false, true] {
+                    let f = try Fixture(); defer { f.close() }
+                    let raw = try Data(contentsOf: f.source)
+                    let source = f.root.appendingPathComponent("합성 보관함.PhOtOsLiBrArY/originals/원본.\(mediaType == 2 ? "mov" : "heic")")
+                    try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    let sourceBytes = Data("합성 보관함 원본".utf8)
+                    try sourceBytes.write(to: source)
+                    let photos = NSPasteboardItem()
+                    let escaped = source.absoluteString.replacingOccurrences(of: ".PhOtOsLiBrArY", with: ".PhOtOs%4CiBrArY")
+                    XCTAssertTrue(photos.setString(escaped, forType: urlType))
+                    XCTAssertTrue(photos.setData(raw, forType: .init(UTType.heic.identifier)))
+                    let asset = try PropertyListSerialization.data(fromPropertyList: ["mediaType": mediaType, "mediaSubtypes": 0],
+                                                                   format: .binary, options: 0)
+                    XCTAssertTrue(photos.setData(asset, forType: .init("com.apple.photos.object-reference.asset")))
+                    let finder = NSPasteboardItem()
+                    XCTAssertTrue(finder.setString(f.source.absoluteString, forType: .fileURL))
+                    let text = NSPasteboardItem()
+                    XCTAssertTrue(text.setString("유지할 텍스트", forType: .string))
+                    XCTAssertTrue(text.setData(Data([0, 255, 1, 128]), forType: .init("io.heic-converter.test.original")))
+                    f.board.clearContents()
+                    XCTAssertTrue(f.board.writeObjects(photosFirst ? [photos, text, finder] : [finder, text, photos]))
+                    let original = try contents(f.board)
+                    let generation = f.board.changeCount
+
+                    f.model.pollClipboard()
+                    f.model.pollClipboard()
+
+                    XCTAssertTrue(f.worker.requests.isEmpty)
+                    XCTAssertFalse(f.model.active)
+                    XCTAssertEqual(f.model.clipboardFiles.count, 2)
+                    XCTAssertTrue(f.model.clipboardFiles.allSatisfy { $0.status == .unsupported })
+                    let display = try XCTUnwrap(photosFirst ? f.model.clipboardFiles.first : f.model.clipboardFiles.last)
+                    XCTAssertNil(display.url, "보관함 원본을 썸네일에 전달하면 안 됩니다.")
+                    XCTAssertEqual(display.isVideo, mediaType == 2)
+                    XCTAssertTrue(f.model.message.contains("Photos 보관함 원본 URL은 종료 후 복구를 보장할 수 없습니다."))
+                    XCTAssertTrue(f.model.message.contains("원본을 내보낸 뒤 Finder에서 복사하세요."))
+                    XCTAssertEqual(f.board.changeCount, generation)
+                    XCTAssertEqual(try contents(f.board), original)
+                    XCTAssertFalse(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("managed").path))
+
+                    let message = f.model.message
+                    f.model.shutdown()
+                    f.model.pollClipboard()
+                    XCTAssertTrue(f.worker.stopped)
+                    XCTAssertTrue(f.worker.requests.isEmpty)
+                    XCTAssertFalse(f.model.active)
+                    XCTAssertTrue(f.model.clipboardFiles.allSatisfy { $0.status == .unsupported })
+                    XCTAssertEqual(f.model.message, message)
+                    XCTAssertEqual(f.board.changeCount, generation)
+                    XCTAssertEqual(try contents(f.board), original)
+                    XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
+                    XCTAssertEqual(try Data(contentsOf: f.source), raw)
+                }
+            }
+        }
+    }
+
+    @MainActor func testRawOnlyPhotosAndNonLibraryPhotosURLStillConvertAndRestoreWithFinderHEIC() throws {
+        let f = try Fixture(); defer { f.close() }
+        let raw = try Data(contentsOf: f.source)
+        let asset = try PropertyListSerialization.data(fromPropertyList: ["mediaType": 1, "mediaSubtypes": 0],
+                                                       format: .binary, options: 0)
+        let photos = [nil, f.root.appendingPathComponent("합성.photoslibrary.backup/없는 원본.heic")].map { url in
+            let item = NSPasteboardItem()
+            if let url {
+                XCTAssertTrue(item.setString(url.absoluteString, forType: .fileURL))
+                XCTAssertTrue(item.setString(url.absoluteString, forType: .URL))
+            }
+            XCTAssertTrue(item.setData(raw, forType: .init(UTType.heic.identifier)))
+            XCTAssertTrue(item.setData(asset, forType: .init("com.apple.photos.object-reference.asset")))
+            return item
+        }
+        let finder = NSPasteboardItem()
+        XCTAssertTrue(finder.setString(f.source.absoluteString, forType: .fileURL))
+        f.board.clearContents(); XCTAssertTrue(f.board.writeObjects([finder] + photos))
+        let original = try contents(f.board)
+        let generation = f.board.changeCount
+        f.model.pollClipboard()
+        XCTAssertEqual(f.board.changeCount, generation)
+        let request = try f.prepare()
+        XCTAssertEqual(request.files?.count, 3)
+        for path in try XCTUnwrap(request.files) {
+            XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), raw)
+        }
+        try f.complete(request)
+        XCTAssertEqual(f.model.clipboardFiles.map(\.status), [.completed, .completed, .completed])
+        f.model.shutdown()
+        XCTAssertEqual(try contents(f.board), original)
+        XCTAssertEqual(try Data(contentsOf: f.source), raw)
     }
 
     @MainActor func testAllSuccessPublishesFileAndImageThenRestoresOriginalOnShutdown() throws {

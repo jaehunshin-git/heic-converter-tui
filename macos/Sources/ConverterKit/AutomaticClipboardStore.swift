@@ -46,6 +46,7 @@ fileprivate struct ClipboardConversion {
 
 public enum AutomaticClipboardError: LocalizedError {
     case selfPublication, clipboardChanged, unsupportedRepresentation, unreadableRepresentation
+    case unrestorablePhotosLibraryURL
     case invalidSnapshot, invalidJob, invalidRoot, unsafePath, directoryUnavailable, fileUnavailable
     case invalidImage, incompleteResults, itemUnavailable, writeFailed, restoreFailed, stopped
 
@@ -55,6 +56,7 @@ public enum AutomaticClipboardError: LocalizedError {
         case .clipboardChanged: return "클립보드가 변경되어 이전 작업을 게시하거나 복구하지 않았습니다."
         case .unsupportedRepresentation: return "원본을 안전하게 보존할 수 없는 클립보드 표현입니다."
         case .unreadableRepresentation: return "클립보드 표현 전체를 읽을 수 없어 원본을 변경하지 않았습니다."
+        case .unrestorablePhotosLibraryURL: return "Photos 보관함 원본 URL은 종료 후 복구를 보장할 수 없습니다. 원본을 내보낸 뒤 Finder에서 복사하세요."
         case .invalidSnapshot: return "이 저장소에서 캡처한 스냅샷이 아닙니다."
         case .invalidJob: return "작업 ID는 UUID여야 하며 이 저장소가 준비한 작업만 사용할 수 있습니다."
         case .invalidRoot: return "임시 경로는 심볼릭 링크가 없는 로컬 전용 폴더여야 합니다."
@@ -145,7 +147,13 @@ public enum AutomaticClipboardError: LocalizedError {
         let generation = pasteboard.changeCount
         let result = (pasteboard.pasteboardItems ?? []).enumerated().compactMap { index, item -> ClipboardFile? in
             let id = "\(generation)-\(index)"
-            if let video = videoFile(id: id, index: index, types: item.types,
+            let types = item.types
+            if types.contains(where: isUnsafeType) {
+                // 약속 항목의 URL·asset·raw는 읽지 않고 선언된 타입만으로 표시한다.
+                return ClipboardFile(id: id, name: "파일 약속 항목 \(index + 1)", url: nil,
+                                     isHEIC: types.contains(where: isHEICType))
+            }
+            if let video = videoFile(id: id, index: index, types: types,
                 data: { item.data(forType: $0) }) { return video }
             // Photos 메타데이터를 해석할 수 없으면 미리보기를 HEIC 원본으로 간주하지 않는다.
             if item.types.contains(Self.photosAssetType), photosMediaType(item.data(forType: Self.photosAssetType)) != 1 {
@@ -181,6 +189,17 @@ public enum AutomaticClipboardError: LocalizedError {
             guard pasteboard.types?.isEmpty != false else { throw Failure.unreadableRepresentation }
             return ClipboardSnapshot(changeCount: generation, files: [], targets: [], owner: owner,
                                      token: token, items: [], conversions: [])
+        }
+        // 약속 타입이 하나라도 있으면 다른 항목을 포함해 어떤 표현 데이터도 요청하지 않는다.
+        // Photos URL 문자열 조회도 data provider를 실행할 수 있으므로 이 타입 검사보다 뒤에 둔다.
+        if originalItems.contains(where: { $0.types.contains(where: isUnsafeType) }) {
+            throw Failure.unsupportedRepresentation
+        }
+        // raw를 변환할 수 있어도 보관함 URL의 정확한 종료 복구는 보장할 수 없다.
+        // 동영상 보존 분기와 다른 항목의 파일 검사보다 먼저 전체 입력을 거절한다.
+        // URL 문자열만 검사하며 Photos 보관함의 파일·메타데이터에는 접근하지 않는다.
+        if originalItems.contains(where: hasPhotosLibraryURL) {
+            throw Failure.unrestorablePhotosLibraryURL
         }
         var saved: [[ClipboardRepresentation]] = []
         var descriptors: [ClipboardFile] = []
@@ -446,6 +465,20 @@ public enum AutomaticClipboardError: LocalizedError {
 
     private static let photosAssetType = NSPasteboard.PasteboardType("com.apple.photos.object-reference.asset")
 
+    private func isPhotosLibraryURL(_ url: URL) -> Bool {
+        url.isFileURL && url.pathComponents.contains {
+            ($0 as NSString).pathExtension.caseInsensitiveCompare("photoslibrary") == .orderedSame
+        }
+    }
+
+    private func hasPhotosLibraryURL(_ item: NSPasteboardItem) -> Bool {
+        guard item.types.contains(Self.photosAssetType) else { return false }
+        return [NSPasteboard.PasteboardType.fileURL, .URL].contains { type in
+            guard let value = item.string(forType: type), let url = URL(string: value) else { return false }
+            return isPhotosLibraryURL(url)
+        }
+    }
+
     /// Photos의 현재 복사 메타데이터만 읽는다. 사진 보관함 접근이나 원본 내보내기는 요청하지 않는다.
     /// 키가 없거나 형식이 바뀌면 raw 이미지의 자동 변환을 허용하지 않는다.
     private func photosMediaType(_ data: Data?) -> Int? {
@@ -480,7 +513,9 @@ public enum AutomaticClipboardError: LocalizedError {
         let movie = urls.first(where: { isVideoURL($0) })
         guard photosVideo || movie != nil || types.contains(where: isVideoType) else { return nil }
         return ClipboardFile(id: id, name: movie?.lastPathComponent ?? "클립보드 동영상 \(index + 1)",
-                             url: movie, isHEIC: false, isVideo: true)
+                             url: movie.flatMap {
+                                 types.contains(Self.photosAssetType) && isPhotosLibraryURL($0) ? nil : $0
+                             }, isHEIC: false, isVideo: true)
     }
 
     /// 로컬 파일의 public.url 표현도 원본 파일로 취급해 raw 포스터로 우회하지 못하게 한다.
@@ -665,6 +700,9 @@ public enum AutomaticClipboardError: LocalizedError {
         let generation = pasteboard.changeCount
         // nil은 조회 오류다. 타입 목록이 있어도 참조 부재를 증명하지 못한다.
         guard let items = cleanupItemsReader(pasteboard) else { return }
+        // 앞선 일반 항목이나 약속보다 먼저 선언된 URL도 provider를 실행할 수 있다.
+        // 전체 타입을 먼저 검사하고, 참조 부재를 증명할 수 없으면 노출된 파일을 유지한다.
+        guard !items.contains(where: { $0.types.contains(where: isUnsafeType) }) else { return }
         var references: [URL] = []
         for item in items {
             for type in item.types {
