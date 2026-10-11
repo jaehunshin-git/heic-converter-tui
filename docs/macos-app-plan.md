@@ -1,5 +1,8 @@
 # macOS 메뉴 막대 앱 및 DMG 배포 구현 계획
 
+> 이 문서는 이슈 #2/PR #3 단계의 기록이다. 이슈 #7의 현재 자동 변환·미니멀 UI 계약은
+> [자동 클립보드 문서](macos-auto-clipboard.md)를 따른다.
+
 - 연결 이슈: [#2 [feat] macOS 메뉴 막대 앱 및 DMG 배포 지원](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
 - 구현 브랜치: `feat/2-macos-menu-bar-app`
 - 작성일: 2026-10-04
