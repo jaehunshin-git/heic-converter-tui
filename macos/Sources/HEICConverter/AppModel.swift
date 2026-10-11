@@ -1,327 +1,396 @@
 import AppKit
 import Combine
 import ConverterKit
-import UniformTypeIdentifiers
+
+/// 목록 ID는 경로가 아닌 pasteboard 항목에 속한다. 같은 파일을 여러 번 복사해도 순서를 유지한다.
+struct ClipboardDisplayFile: Identifiable {
+    let id: String
+    var name: String
+    var url: URL?
+    var status: ClipboardDisplayStatus
+    var detail: String?
+    var isVideo = false
+}
+
+enum ClipboardDisplayStatus {
+    case ready, converting, completed, failed, unsupported
+    var label: String {
+        switch self {
+        case .ready: return "준비"
+        case .converting: return "변환 중"
+        case .completed: return "완료"
+        case .failed: return "실패"
+        case .unsupported: return "지원 안 함"
+        }
+    }
+}
+
+/// 성공 알림은 변환 결과가 현재 클립보드에 모두 반영된 뒤에만 제공한다.
+struct ClipboardConversionNotice: Equatable, Identifiable {
+    enum Phase: Equatable { case preparing, converting, completed, failed }
+    let id: UUID
+    let sourceChangeCount: Int
+    let copiedFileCount: Int
+    let heicCount: Int
+    let phase: Phase
+    let completedCount: Int
+    let detail: String?
+}
 
 @MainActor final class AppModel: ObservableObject {
     @Published var settings: AppSettings { didSet { settings.save(to: settingsStore) } }
-    @Published var queue = QueueState() { didSet { pruneDuplicateNotices() } }
-    @Published var dropTargeted = false
-    @Published var staged: [URL] = [] { didSet { pruneDuplicateNotices() } }
-    @Published var notices: [InputRejection] = []
-    @Published var message = "HEIC 파일을 드롭하거나 클릭해 선택하세요."
-    @Published var clipboardMessage: String?
-    @Published var cancelling = false
-    @Published var selectedDestination: ConversionDestination = .files
+    @Published private(set) var clipboardFiles: [ClipboardDisplayFile] = []
+    @Published private(set) var message = "HEIC를 복사하면 자동으로 변환합니다."
+    @Published private(set) var active = false
     @Published private(set) var terminating = false
-    private let worker = WorkerClient()
-    private let clipboardResults: ClipboardResultStore
-    private var clipboardChangeCounts: [String: Int] = [:]
-    private var convertedClipboardFiles: [String: URL] = [:]
-    private var cancellationJobIDs: [String] = []
-    private var timer: Timer?
+    @Published private(set) var conversionNotice: ClipboardConversionNotice?
+    private let worker: WorkerConnection
+    private let store: AutomaticClipboardStore
     private let pasteboard: NSPasteboard
     private let settingsStore: UserDefaults
-    private var gate: ClipboardGate
-    private var duplicateNoticePaths: [String: String] = [:]
-    private var awaitingPreparation = false
-    private var preparationRejectedCount = 0
-    /// 자동 감지로 새 파일을 추가했을 때만 패널 표시를 요청한다.
-    var onClipboardFilesAdded: (() -> Void)?
-    var waitingCount: Int { queue.waitingCount }
-    var active: Bool { queue.activeJob != nil }
+    private var timer: Timer?
+    private var observedChange: Int?
+    private var publishedChange: Int?
+    private var current: ClipboardSnapshot?
+    private var pending: ClipboardSnapshot?
+    private var work: Work?
+    private var stopping = false
+    private var shutdownCompletions: [() -> Void] = []
+    private var shutdownFinished = false
 
-    init(startClipboard: Bool = true, pasteboard: NSPasteboard = .general, defaults: UserDefaults = .standard,
-         clipboardRoot: URL? = nil) {
-        self.pasteboard = pasteboard; self.settingsStore = defaults
-        self.clipboardResults = ClipboardResultStore(pasteboard: pasteboard, root: clipboardRoot)
-        self.settings = AppSettings.load(from: defaults)
-        self.gate = ClipboardGate(changeCount: pasteboard.changeCount)
-        worker.onEvent = { [weak self] event in self?.receive(event) }
-        worker.onFailure = { [weak self] error in
-            guard let self else { return }
-            if let job = self.queue.activeJob, job.destination == .clipboard {
-                self.worker.stop(afterExit: { [clipboardResults = self.clipboardResults] in
-                    clipboardResults.discard(jobID: job.id)
-                })
-            }
-            self.convertedClipboardFiles.removeAll(); self.clipboardChangeCounts.removeAll()
-            self.awaitingPreparation = false; self.preparationRejectedCount = 0
-            self.queue.failActive(error); self.cancelling = false; self.message = error
-        }
+    private struct Work {
+        let snapshot: ClipboardSnapshot
+        let job: ConversionJob
+        let inputPaths: [String]
+        var awaitingPreparation = true
+        var invalidated = false
+        var cancelSent = false
+        var failed = false
+        var results: [String: URL] = [:]
+    }
+
+    init(startClipboard: Bool = true, pasteboard: NSPasteboard = .general,
+         defaults: UserDefaults = .standard, clipboardRoot: URL? = nil,
+         worker: WorkerConnection? = nil) {
+        self.pasteboard = pasteboard
+        settingsStore = defaults
+        settings = AppSettings.load(from: defaults)
+        store = AutomaticClipboardStore(pasteboard: pasteboard, root: clipboardRoot)
+        self.worker = worker ?? WorkerClient()
+        self.worker.onEvent = { [weak self] in self?.receive($0) }
+        self.worker.onFailure = { [weak self] in self?.workerFailed($0) }
         guard startClipboard else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pollClipboard() }
         }
         if let timer { RunLoop.main.add(timer, forMode: .common) }
+        // 시작 시 현재 내용을 표시한다. 복사 감지는 패널을 열거나 포커스를 바꾸지 않는다.
+        pollClipboard()
     }
+
     func setClipboard(_ enabled: Bool) {
+        guard !terminating else { return }
         settings.clipboardEnabled = enabled
-        gate.resume(changeCount: pasteboard.changeCount)
-        clipboardMessage = nil
-    }
-    func pollClipboard() {
-        var denied = false
-        if #available(macOS 15.4, *) { denied = pasteboard.accessBehavior == .alwaysDeny }
-        if gate.shouldRead(changeCount: pasteboard.changeCount, enabled: settings.clipboardEnabled, accessDenied: denied) {
-            readClipboard(manual: false)
+        if !enabled {
+            conversionNotice = nil
+            pending = nil
+            invalidateWork()
+            updateCurrent(status: .ready, detail: nil)
+            message = "자동 변환 꺼짐 · 이미 준비한 결과는 유지합니다."
+        } else {
+            if publishedChange != pasteboard.changeCount { observedChange = nil }
+            pollClipboard()
+            if publishedChange != pasteboard.changeCount, let current,
+               work == nil || work?.invalidated == true {
+                pending = current
+                startPending()
+            }
         }
-        if gate.denied { clipboardMessage = "클립보드 접근이 거부되었습니다. 파일을 드롭하거나 직접 붙여넣으세요. 허용 후 감지를 다시 켜세요." }
     }
-    func paste() { readClipboard(manual: true) }
-    /// 파일 선택도 드롭과 같은 확인 단계를 거치며 취소 시 목록을 변경하지 않는다.
-    func chooseFiles() -> Bool? {
-        let panel = NSOpenPanel()
-        panel.title = "HEIC 파일 선택"
-        panel.message = "변환할 HEIC 파일을 선택하세요. 여러 파일을 선택할 수 있습니다."
-        panel.prompt = "선택"
-        panel.allowedContentTypes = [.heic]
-        panel.allowsOtherFileTypes = false
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.resolvesAliases = false
-        guard panel.runModal() == .OK else { return nil }
-        let previousCount = staged.count
-        stage(panel.urls)
-        return staged.count > previousCount
-    }
-    private func readClipboard(manual: Bool) {
-        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        if manual { gate.resume(changeCount: pasteboard.changeCount) }
-        guard !urls.isEmpty else {
-            if manual { message = "붙여넣을 로컬 HEIC 파일이 없습니다. Finder에서 파일을 복사하세요." }
+
+    func pollClipboard() {
+        guard !terminating else { return }
+        let count = pasteboard.changeCount
+        guard observedChange != count else { return }
+        observedChange = count
+        if publishedChange == count { return }
+        conversionNotice = nil
+        publishedChange = nil
+        pending = nil
+        invalidateWork()
+        store.clipboardDidChange()
+        current = nil
+        clipboardFiles = []
+        FileThumbnailStore.shared.removeAllCachedThumbnails()
+        if #available(macOS 15.4, *), pasteboard.accessBehavior == .alwaysDeny {
+            message = "클립보드 접근이 거부되었습니다. 시스템 설정에서 접근을 허용하세요."
+            // 허용을 바꾸면 같은 세대라도 다시 확인한다.
+            observedChange = nil
             return
         }
-        let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
-        queue.add(result.accepted); setNotices(result.rejected)
-        if !result.accepted.isEmpty {
-            message = "\(result.accepted.count)개 파일을 대기 목록에 추가했습니다."
-            if !manual { onClipboardFilesAdded?() }
+        do {
+            let snapshot = try store.capture()
+            guard snapshot.changeCount == pasteboard.changeCount else { observedChange = nil; return }
+            current = snapshot
+            clipboardFiles = snapshot.files.map {
+                ClipboardDisplayFile(id: $0.id, name: $0.name, url: $0.url,
+                    status: $0.isVideo ? .unsupported : .ready,
+                    detail: $0.isVideo ? "동영상 · 변환 제외 · 클립보드 유지" : nil, isVideo: $0.isVideo)
+            }
+            if !settings.clipboardEnabled {
+                message = "자동 변환 꺼짐"
+            } else if snapshot.targets.isEmpty {
+                message = snapshot.files.contains(where: \.isVideo)
+                    ? "동영상은 변환하지 않습니다 · 클립보드를 유지합니다."
+                    : (snapshot.files.isEmpty ? "클립보드에 HEIC가 없습니다." : "HEIC가 없습니다 · 현재 내용을 유지합니다.")
+            } else {
+                pending = snapshot
+                message = "\(snapshot.targets.count)개 HEIC 변환 준비"
+                notify(snapshot, phase: .preparing)
+                startPending()
+            }
+        } catch {
+            // 거절된 내용도 이름은 표시한다. 표현을 일부만 읽어서 게시하지 않는다.
+            let previewFiles = store.previewFiles()
+            let preview = previewFiles.map {
+                ClipboardDisplayFile(id: $0.id, name: $0.name, url: $0.url,
+                    status: .unsupported, detail: $0.isVideo ? "동영상 · 변환 제외 · 클립보드 유지" : error.localizedDescription,
+                    isVideo: $0.isVideo)
+            }
+            guard pasteboard.changeCount == count else { observedChange = nil; return }
+            clipboardFiles = preview
+            message = "지원하지 않는 클립보드 · \(error.localizedDescription)"
+            let heicCount = previewFiles.filter(\.isHEIC).count
+            if settings.clipboardEnabled, heicCount > 0 {
+                conversionNotice = ClipboardConversionNotice(id: UUID(), sourceChangeCount: count,
+                    copiedFileCount: previewFiles.count, heicCount: heicCount, phase: .failed,
+                    completedCount: 0, detail: "HEIC를 읽을 수 없습니다. 전체 원본을 유지했습니다.")
+            }
         }
     }
-    func stage(_ urls: [URL], updateNotices: Bool = true) {
-        let result = InputValidator.validate(urls, excluding: queue.knownPaths.union(staged.map(\.path)))
-        staged.append(contentsOf: result.accepted)
-        if updateNotices { setNotices(result.rejected) }
-    }
-    func acceptStaged(convert: Bool) {
-        let paths = staged.map(\.path)
-        queue.add(staged); staged.removeAll()
-        if convert { schedule(paths, destination: selectedDestination) }
-    }
-    func remove(_ path: String) {
-        // 표시 중인 항목의 ID는 파일 경로가 나중에 교체되어도 바뀌지 않는다.
-        let itemID = queue.knownPaths.contains(path) ? path : InputValidator.canonicalPath(URL(fileURLWithPath: path))
-        queue.remove(itemID)
-    }
-    // 선택 상태가 가진 고정 ID를 그대로 사용한다. 파일 경로를 다시 해석하지 않는다.
-    func removeSelected(_ ids: Set<String>) { queue.removeSelected(ids) }
-    func removeAll() { queue.removeAll() }
-    func clearCompleted() { queue.clearCompleted() }
-    func cancelStaged() { staged.removeAll() }
 
-    /// 중복 안내는 목록 상태에 종속된다. 지원 형식·권한 등 다른 입력 오류는 보존한다.
-    private func pruneDuplicateNotices() {
-        let listedPaths = queue.knownPaths.union(staged.map(\.path))
-        let remaining = notices.filter { rejection in
-            rejection.reason != "이미 목록에 있는 파일입니다."
-                || listedPaths.contains(duplicateNoticePaths[rejection.path] ?? rejection.path)
-        }
-        if remaining != notices { notices = remaining }
-        let remainingPaths = Set(remaining.map(\.path))
-        duplicateNoticePaths = duplicateNoticePaths.filter { remainingPaths.contains($0.key) }
+    private func invalidateWork() {
+        guard work != nil else { return }
+        work?.invalidated = true
+        if work?.awaitingPreparation == false { sendCancel() }
     }
-    private func setNotices(_ rejections: [InputRejection]) {
-        // 검증 시점의 동일 파일 관계를 기억해 외부 파일 교체로 안내 대상이 바뀌지 않게 한다.
-        duplicateNoticePaths = [:]
-        for rejection in rejections where rejection.reason == "이미 목록에 있는 파일입니다." {
-            duplicateNoticePaths[rejection.path] = InputValidator.canonicalPath(URL(fileURLWithPath: rejection.path))
-        }
-        notices = rejections
+
+    private func sendCancel() {
+        guard let work, !work.cancelSent else { return }
+        self.work?.cancelSent = true
+        do { try worker.send(WorkerRequest(command: "cancel", job: work.job)) }
+        catch { workerFailed(error.localizedDescription) }
     }
-    func startWaiting() { startWaiting(destination: selectedDestination) }
-    func startWaiting(destination: ConversionDestination, includingStaged: Bool = false) {
-        selectedDestination = destination
-        if includingStaged { acceptStaged(convert: false) }
-        schedule(queue.items.filter { $0.status == .waiting }.map(\.id), destination: destination)
-    }
-    func retryFailures() {
-        // 재시도는 실패 항목이 요청했던 저장·복사 방식을 유지한다.
-        for destination in [ConversionDestination.files, .clipboard] {
-            schedule(queue.items.filter { $0.status == .failed && $0.conversionDestination == destination }.map(\.id),
-                     destination: destination)
-        }
-    }
-    func retry(_ path: String) {
-        guard let item = queue.items.first(where: { $0.id == path }) else { return }
-        schedule([path], destination: item.conversionDestination)
-    }
-    private func schedule(_ paths: [String], destination: ConversionDestination) {
-        let previousJobs = Set(queue.jobs.map(\.id))
-        queue.schedule(paths: paths, settings: settings, destination: destination)
-        for job in queue.jobs where !previousJobs.contains(job.id) && job.destination == .clipboard {
-            clipboardChangeCounts[job.id] = pasteboard.changeCount
-        }
-        startNext()
-    }
-    private func startNext() {
-        guard !terminating else { return }
-        guard let job = queue.next() else { return }
-        cancelling = false
-        awaitingPreparation = true; preparationRejectedCount = 0
-        convertedClipboardFiles.removeAll()
-        var outputDirectory: String?
-        if job.destination == .clipboard {
-            do { outputDirectory = try clipboardResults.prepareDirectory(jobID: job.id).path }
-            catch {
-                clipboardChangeCounts.removeValue(forKey: job.id)
-                queue.failCurrentJob(error.localizedDescription)
-                awaitingPreparation = false; message = error.localizedDescription
-                startNext(); return
-            }
-        }
+
+    private func startPending() {
+        guard !terminating, !stopping, work == nil, settings.clipboardEnabled,
+              let snapshot = pending else { return }
+        pending = nil
+        guard snapshot.changeCount == pasteboard.changeCount, !snapshot.targets.isEmpty else { return }
+        // 옵션은 복사 세대마다 고정한다. 이름 충돌은 임시 작업 폴더 안에서만 처리한다.
+        var jobSettings = settings
+        jobSettings.options.onConflict = "rename"
+        var job: ConversionJob?
         do {
+            // raw HEIC 데이터는 prepare 단계에서 작업 소유의 입력 파일로 물질화한다.
+            let placeholder = ConversionJob(files: [], settings: jobSettings, destination: .clipboard)
+            job = placeholder
+            let prepared = try store.prepare(snapshot: snapshot, jobID: placeholder.id)
+            let paths = prepared.inputs.map(\.path)
+            // worker 요청 ID와 저장소 소유 ID를 일치시키기 위해 기존 job ID를 유지한다.
+            let actual = ConversionJob(id: placeholder.id, files: paths, settings: jobSettings, destination: .clipboard)
+            job = actual
+            work = Work(snapshot: snapshot, job: actual, inputPaths: paths)
+            active = true
+            notify(snapshot, phase: .preparing)
+            updateCurrent(status: .converting, detail: nil)
+            // 메모리 HEIC도 썸네일에 같은 파일 디코더를 사용한다.
+            for (target, input) in zip(snapshot.targets, prepared.inputs) {
+                if let index = clipboardFiles.firstIndex(where: { $0.id == target.id }), snapshot.files.first(where: { $0.id == target.id })?.url == nil {
+                    clipboardFiles[index].url = input
+                }
+            }
             try worker.start()
-            var request = WorkerRequest(command: "prepare", job: job, outputDirectory: outputDirectory)
-            // 이미지 복사는 파일 이름과 무관하다. 임시 결과끼리 겹쳐도 모두 변환한다.
-            if job.destination == .clipboard { request.options?.onConflict = "rename" }
-            try worker.send(request)
-            message = job.destination == .clipboard ? "복사할 \(job.files.count)개 파일을 확인하고 있습니다."
-                : "저장 위치와 \(job.files.count)개 파일을 확인하고 있습니다."
-        } catch { worker.fail(error.localizedDescription) }
-    }
-    func cancel() {
-        guard let job = queue.activeJob, !cancelling else { return }
-        do {
-            // 준비 실패 후의 unknown_job 응답이 다음 예약에 섞이지 않도록 prepared까지 기다린다.
-            if !awaitingPreparation {
-                try worker.send(WorkerRequest(command: "cancel", job: job))
-                rememberCancellation(job.id)
+            try worker.send(WorkerRequest(command: "prepare", job: actual, outputDirectory: prepared.outputDirectory.path))
+            message = "\(snapshot.targets.count)개 HEIC 변환 중 · 완료 전 붙여넣기는 원본을 전달할 수 있습니다."
+        } catch {
+            if work != nil {
+                // 요청 쓰기가 일부만 성공했어도 worker가 입력을 사용할 수 있다.
+                // 실제 종료 콜백 전에는 작업 파일을 삭제하지 않는다.
+                workerFailed(error.localizedDescription)
+            } else {
+                if let job { store.discard(jobID: job.id) }
+                active = false
+                updateCurrent(status: .failed, detail: error.localizedDescription)
+                message = "변환 실패 · \(error.localizedDescription)"
+                notify(snapshot, phase: .failed, detail: "변환 준비에 실패했습니다. 원본을 유지했습니다.")
             }
-            cancelling = true; message = "현재 파일 저장 후 취소합니다."
         }
-        catch { worker.fail(error.localizedDescription) }
     }
+
     private func receive(_ event: WorkerEvent) {
-        // 마지막 파일 완료와 취소 전송이 교차하면 이전 작업의 unknown_job이 뒤늦게 올 수 있다.
-        if event.event == "error", event.errorCode == "unknown_job",
-           event.jobID != queue.activeJob?.id, cancellationJobIDs.contains(event.jobID) {
-            cancellationJobIDs.removeAll { $0 == event.jobID }; return
-        }
-        guard let job = queue.activeJob else { return }
-        guard job.id == event.jobID else { worker.fail("worker 응답의 작업 ID가 일치하지 않습니다."); return }
+        guard !terminating, let currentWork = work else { return }
+        // 취소와 최종 완료가 교차한 이전 작업의 늦은 응답은 다음 세대에 영향을 주지 않는다.
+        guard event.jobID == currentWork.job.id else { return }
         switch event.event {
         case "prepared":
-            awaitingPreparation = false
-            // worker의 최종 집계는 수락한 입력만 세므로 준비 단계의 거절도 표시 집계에 포함한다.
-            preparationRejectedCount = Set((event.rejected ?? []).map(\.source)).count
-            for rejection in event.rejected ?? [] { queue.update(path: rejection.source, status: .failed, detail: rejection.reason) }
-            do {
-                try worker.send(WorkerRequest(command: cancelling ? "cancel" : "run", job: job))
-                if cancelling { rememberCancellation(job.id) }
+            work?.awaitingPreparation = false
+            guard event.files == currentWork.inputPaths, event.rejected?.isEmpty == true else {
+                work?.failed = true
+                sendCancel()
+                return
             }
-            catch { worker.fail(error.localizedDescription) }
-        case "file_started":
-            if let path = event.source { queue.update(path: path, status: .running) }
-            message = "\(event.index ?? 0)/\(event.total ?? job.files.count) 변환 중"
-        case "file_succeeded", "file_skipped", "file_failed":
-            guard let path = event.source else { return }
-            let status: FileStatus = event.event == "file_succeeded" ? .succeeded : event.event == "file_skipped" ? .skipped : .failed
-            var detail = event.error.map { "\(event.errorCode ?? "conversion_error"): \($0)" }
-            if status == .failed, ["output_permission", "output_unavailable"].contains(event.errorCode ?? "") {
-                detail = (detail ?? "저장 실패") + (job.destination == .files
-                    ? " 저장 위치를 변경한 뒤 실패 파일을 재시도하세요."
-                    : " 임시 변환 위치에 접근할 수 없습니다. 재시도하거나 앱을 다시 실행하세요.")
-            }
-            if status == .succeeded { detail = event.hdrApplied == true ? "HDR 적용" : event.sdrReason }
-            if status == .skipped { detail = "동일한 이름의 결과가 있어 건너뛰었습니다." }
-            if job.destination == .clipboard, status == .succeeded, let destination = event.destination {
-                convertedClipboardFiles[path] = URL(fileURLWithPath: destination)
-                // 클립보드 게시가 끝날 때까지 잠금을 유지하고 임시 결과 열기는 제공하지 않는다.
-                queue.update(path: path, status: .running, detail: "변환 완료 · 복사 대기")
+            if currentWork.invalidated || !settings.clipboardEnabled || pasteboard.changeCount != currentWork.snapshot.changeCount {
+                work?.invalidated = true
+                sendCancel()
             } else {
-                queue.update(path: path, status: status, detail: detail, destination: event.destination)
+                do {
+                    notify(currentWork.snapshot, phase: .converting)
+                    try worker.send(WorkerRequest(command: "run", job: currentWork.job))
+                }
+                catch { workerFailed(error.localizedDescription) }
             }
+        case "file_succeeded":
+            guard let source = event.source, currentWork.inputPaths.contains(source), let destination = event.destination else {
+                work?.failed = true; return
+            }
+            work?.results[source] = URL(fileURLWithPath: destination)
+            if !currentWork.invalidated {
+                notify(currentWork.snapshot, phase: .converting, completedCount: work?.results.count ?? 0)
+            }
+        case "file_failed", "file_skipped":
+            work?.failed = true
         case "completed", "cancelled":
-            if job.destination == .clipboard { finishClipboardJob(job, event: event) }
-            else {
-                message = "\(event.event == "cancelled" ? "취소" : "완료"): 성공 \(event.succeeded ?? 0), 건너뜀 \(event.skipped ?? 0), 실패 \((event.failed ?? 0) + preparationRejectedCount)"
-            }
-            preparationRejectedCount = 0; awaitingPreparation = false
-            queue.finish(); cancelling = false; startNext()
+            finish(event)
         case "error":
-            let error = "\(event.errorCode ?? "worker_error"): \(event.message ?? "작업을 시작하지 못했습니다.")"
-            // prepare 검증 실패 또는 worker가 정리한 단일 실행 오류는 세션 장애가 아니다.
-            let jobError = (awaitingPreparation && event.errorCode == "invalid_request")
-                || event.errorCode == "worker_failed"
-            guard jobError else { worker.fail(error); return }
-            if job.destination == .clipboard {
-                clipboardResults.discard(jobID: job.id)
-                clipboardChangeCounts.removeValue(forKey: job.id); convertedClipboardFiles.removeAll()
-            }
-            queue.failCurrentJob(error); cancelling = false
-            preparationRejectedCount = 0; awaitingPreparation = false
-            message = error + (job.destination == .files
-                ? " 저장 경로 또는 옵션을 확인하고, 저장 폴더 오류라면 저장 위치를 변경하세요."
-                : " 변환 옵션 또는 임시 변환 위치를 확인한 뒤 재시도하세요.")
-            startNext()
+            workerFailed(event.message ?? "worker 오류")
         default: break
         }
     }
-    private func rememberCancellation(_ id: String) {
-        cancellationJobIDs.append(id)
-        if cancellationJobIDs.count > 32 { cancellationJobIDs.removeFirst() }
-    }
-    private func finishClipboardJob(_ job: ConversionJob, event: WorkerEvent) {
-        defer {
-            clipboardChangeCounts.removeValue(forKey: job.id)
-            convertedClipboardFiles.removeAll()
-        }
-        let failed = (event.failed ?? 0) + preparationRejectedCount
-        let cancelled = cancelling || event.event == "cancelled"
-        guard !cancelled, !convertedClipboardFiles.isEmpty else {
-            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .waiting, detail: "복사를 취소했습니다.") }
-            clipboardResults.discard(jobID: job.id)
-            message = cancelled ? "복사 취소: 기존 클립보드를 유지했습니다."
-                : "복사할 변환 결과가 없습니다. 실패 \(failed) · 기존 클립보드를 유지했습니다."
-            return
-        }
-        do {
-            guard let expectedCount = clipboardChangeCounts[job.id] else { throw WorkerFailure.invalidEvent }
-            let urls = job.files.compactMap { convertedClipboardFiles[$0] }
-            let publishedCount = try clipboardResults.publish(jobID: job.id, urls: urls, expectedChangeCount: expectedCount)
-            // 앱 자신의 복사는 다음 예약의 기준만 갱신하고 외부 변경은 갱신하지 않는다.
-            for id in clipboardChangeCounts.keys where clipboardChangeCounts[id] == expectedCount {
-                clipboardChangeCounts[id] = publishedCount
+
+    private func finish(_ event: WorkerEvent) {
+        guard let work else { return }
+        let relevant = pasteboard.changeCount == work.snapshot.changeCount && current?.changeCount == work.snapshot.changeCount
+        let allSucceeded = event.event == "completed" && !work.failed && event.failed == 0 && event.skipped == 0
+            && event.succeeded == work.inputPaths.count && work.results.count == work.inputPaths.count
+        if relevant, !work.invalidated, settings.clipboardEnabled, allSucceeded {
+            do {
+                let results = try work.inputPaths.map { path -> URL in
+                    guard let result = work.results[path] else { throw WorkerFailure.invalidEvent }
+                    return result
+                }
+                let count = try store.publish(snapshot: work.snapshot, jobID: work.job.id, results: results)
+                observedChange = count; publishedChange = count
+                updateCurrent(status: .completed, detail: "붙여넣기 준비됨")
+                for (target, result) in zip(work.snapshot.targets, results) {
+                    if let index = clipboardFiles.firstIndex(where: { $0.id == target.id }) {
+                        clipboardFiles[index].url = result
+                        clipboardFiles[index].name = result.lastPathComponent
+                    }
+                }
+                message = "\(results.count)개 변환 완료 · ⌘V로 붙여넣으세요."
+                notify(work.snapshot, phase: .completed, completedCount: results.count)
+            } catch {
+                updateCurrent(status: .failed, detail: error.localizedDescription)
+                message = "게시 실패 · \(error.localizedDescription)"
+                notify(work.snapshot, phase: .failed, detail: "클립보드 반영에 실패했습니다. 상세 내용을 확인하세요.")
+                resetUnpublishedURLs(snapshot: work.snapshot)
+                store.discard(jobID: work.job.id)
+                // 게시 실패 후 원본 복구도 앱이 만든 세대다. 즉시 재변환하지 않는다.
+                if store.ownedChangeCount == pasteboard.changeCount { observedChange = pasteboard.changeCount }
             }
-            gate.resume(changeCount: publishedCount)
-            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .succeeded, detail: "클립보드에 복사됨") }
-            message = "이미지 복사 완료: \(urls.count)개 · 실패 \(failed). 문서나 메신저에 붙여넣으세요."
-        } catch {
-            for path in convertedClipboardFiles.keys { queue.update(path: path, status: .failed, detail: error.localizedDescription) }
-            clipboardResults.discard(jobID: job.id)
-            message = "복사 실패: \(error.localizedDescription)"
+        } else {
+            if relevant, settings.clipboardEnabled, !work.invalidated {
+                updateCurrent(status: .failed, detail: "전체 원본을 유지했습니다.")
+                message = "변환 실패 · 부분 결과를 게시하지 않고 전체 원본을 유지했습니다."
+                notify(work.snapshot, phase: .failed, detail: "변환하지 못했습니다. 전체 원본을 유지했습니다.")
+            }
+            resetUnpublishedURLs(snapshot: work.snapshot)
+            store.discard(jobID: work.job.id)
+        }
+        self.work = nil; active = false
+        // 결과를 게시하기 직전 복사한 입력까지 즉시 관찰한다.
+        pollClipboard()
+        startPending()
+    }
+
+    private func resetUnpublishedURLs(snapshot: ClipboardSnapshot) {
+        guard current?.changeCount == snapshot.changeCount, publishedChange == nil else { return }
+        for file in snapshot.files {
+            if let index = clipboardFiles.firstIndex(where: { $0.id == file.id }) {
+                clipboardFiles[index].url = file.url
+            }
         }
     }
-    func chooseOutput() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
-        panel.prompt = "저장 위치 선택"
-        if panel.runModal() == .OK, let url = panel.url { settings.outputDirectory = url.path }
+
+    private func updateCurrent(status: ClipboardDisplayStatus, detail: String?) {
+        guard let current else { return }
+        let targets = Set(current.targets.map(\.id))
+        for index in clipboardFiles.indices where targets.contains(clipboardFiles[index].id) {
+            // 이미 게시한 결과는 끄더라도 완료 상태를 유지한다.
+            if status == .ready, clipboardFiles[index].status == .completed { continue }
+            clipboardFiles[index].status = status
+            clipboardFiles[index].detail = detail
+        }
     }
-    func openOutput() { NSWorkspace.shared.open(URL(fileURLWithPath: settings.outputDirectory)) }
-    func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+
+    private func workerFailed(_ error: String) {
+        guard !stopping else { return }
+        stopping = true
+        let failedWork = work
+        work = nil; active = false
+        if failedWork?.snapshot.changeCount == pasteboard.changeCount {
+            updateCurrent(status: .failed, detail: error)
+            message = "변환 실패 · \(error)"
+            if let failedWork, !failedWork.invalidated {
+                notify(failedWork.snapshot, phase: .failed, detail: "변환하지 못했습니다. 원본을 유지했습니다.")
+            }
+        }
+        worker.stop { [weak self] in
+            guard let self else { return }
+            if let failedWork {
+                self.resetUnpublishedURLs(snapshot: failedWork.snapshot)
+                self.store.discard(jobID: failedWork.job.id)
+            }
+            self.stopping = false
+            self.pollClipboard()
+            self.startPending()
+        }
+    }
+
+    private func notify(_ snapshot: ClipboardSnapshot, phase: ClipboardConversionNotice.Phase,
+                        completedCount: Int = 0, detail: String? = nil) {
+        guard !terminating, settings.clipboardEnabled, !snapshot.targets.isEmpty,
+              current?.changeCount == snapshot.changeCount else { return }
+        let boardIsCurrent = pasteboard.changeCount == snapshot.changeCount
+        let ownPublication = publishedChange == pasteboard.changeCount
+            || (phase == .failed && store.ownedChangeCount == pasteboard.changeCount)
+        guard boardIsCurrent || ownPublication else { return }
+        let id = conversionNotice.flatMap { $0.sourceChangeCount == snapshot.changeCount ? $0.id : nil } ?? UUID()
+        conversionNotice = ClipboardConversionNotice(id: id, sourceChangeCount: snapshot.changeCount,
+            copiedFileCount: snapshot.files.count, heicCount: snapshot.targets.count, phase: phase,
+            completedCount: completedCount, detail: detail)
+    }
+
     func shutdown(completion: (() -> Void)? = nil) {
+        if shutdownFinished { completion?(); return }
+        if let completion { shutdownCompletions.append(completion) }
+        guard !terminating else { return }
         terminating = true
+        conversionNotice = nil
         timer?.invalidate(); timer = nil
-        let jobID = queue.activeJob.flatMap { $0.destination == .clipboard ? $0.id : nil }
-        worker.stop(afterExit: { [clipboardResults] in
-            if let jobID { clipboardResults.discard(jobID: jobID) }
-            clipboardResults.shutdown()
-            completion?()
-        })
-        FileThumbnailStore.shared.removeAllCachedThumbnails()
+        pending = nil
+        let jobID = work?.job.id
+        work?.invalidated = true
+        worker.stop { [self] in
+            if let jobID { store.discard(jobID: jobID) }
+            do { try store.shutdown() }
+            catch { message = "원본 복구 실패 · 임시 파일을 유지했습니다: \(error.localizedDescription)" }
+            active = false; work = nil
+            FileThumbnailStore.shared.removeAllCachedThumbnails()
+            shutdownFinished = true
+            let completions = shutdownCompletions; shutdownCompletions.removeAll()
+            completions.forEach { $0() }
+        }
     }
 }

@@ -5,279 +5,145 @@ import ConverterKit
 import ImageIO
 import UniformTypeIdentifiers
 
-final class DropPanel: NSPanel {
-    var onPaste: (() -> Void)?
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "v" {
-            onPaste?(); return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
+final class ClipboardPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let model = AppModel(startClipboard: !CommandLine.arguments.contains("--smoke-test"))
+    private let model: AppModel
     private var statusItem: NSStatusItem!
-    private var panel: DropPanel!
+    private var panel: ClipboardPanel!
+    private var settingsWindow: NSWindow?
     private let panelChrome = PanelChromeState()
-    private var countSubscription: AnyCancellable?
-    private var inputSubscription: AnyCancellable?
-    private var inputLayoutScheduled = false
-    private var settingsExpanded = false
-    private var userPreferredHeight = PanelPlacement.defaultSize.height
-    private var lastPositionedHeight = PanelPlacement.defaultSize.height
+    private var subscription: AnyCancellable?
+    private var clipboardSubscription: AnyCancellable?
+    private var noticeSubscription: AnyCancellable?
+    private let noticeController = ClipboardNoticeController()
+    private var clipboardLayoutScheduled = false
+    private var populatedPanelHeight: CGFloat?
     private var isPositioningPanel = false
-    private var panelRevealTimer: Timer?
+    private var smokePasteboard: NSPasteboard?
+    private var smokeDomain: String?
+
+    override init() {
+        if CommandLine.arguments.contains("--smoke-test") {
+            let name = "heic-panel-smoke-\(UUID().uuidString)"
+            let board = NSPasteboard(name: .init(name))
+            smokePasteboard = board; smokeDomain = name
+            model = AppModel(startClipboard: false, pasteboard: board,
+                             defaults: UserDefaults(suiteName: name)!)
+        } else {
+            model = AppModel()
+        }
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // 사진 클립보드 실루엣을 가운데 배치하고 좌우 여백을 확보한다.
+        statusItem = NSStatusBar.system.statusItem(withLength: 32)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "photo.badge.arrow.down", accessibilityDescription: "HEIC Converter")
-            button.imagePosition = .imageLeading
+            button.image = PhotoClipboardIconGeometry.makeTemplateImage()
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
             button.target = self; button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.toolTip = "HEIC Converter · 왼쪽 클릭: 패널 열기 또는 숨기기 · 오른쪽 클릭: 앱 메뉴"
+            button.toolTip = "왼쪽 클릭: 현재 클립보드 · 오른쪽 클릭: 설정과 종료"
         }
-        panel = DropPanel(contentRect: NSRect(origin: .zero, size: PanelPlacement.defaultSize),
-                          styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+        let initialSize = NSSize(width: PanelPlacement.defaultSize.width, height: PanelPlacement.emptyHeight)
+        panel = ClipboardPanel(contentRect: NSRect(origin: .zero, size: initialSize),
+                               styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         panel.title = "HEIC Converter"
-        panel.onPaste = { [weak self] in self?.model.paste() }
-        panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.DropPanel")
+        panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.ClipboardPanel")
         panel.level = .floating
-        panel.hidesOnDeactivate = false
+        panel.hidesOnDeactivate = true
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.minSize = PanelPlacement.minimumSize
+        panel.minSize = NSSize(width: PanelPlacement.minimumSize.width, height: PanelPlacement.emptyHeight)
         panel.delegate = self
-        let contentView = NSHostingView(rootView: PanelView(model: model, chrome: panelChrome, onClose: { [weak self] in
-            self?.hidePanel()
-        }, onSettingsExpansionChanged: { [weak self] expanded in
-            self?.setSettingsExpanded(expanded)
+        let content = NSHostingView(rootView: PanelView(model: model, chrome: panelChrome, onClose: { [weak self] in
+            self?.panel.orderOut(nil)
         }))
-        // 스크롤 콘텐츠의 intrinsic 높이가 창 크기를 덮어쓰지 않도록 한다.
-        contentView.sizingOptions = []
-        panel.contentView = contentView
-        panel.setContentSize(PanelPlacement.defaultSize)
-        model.onClipboardFilesAdded = { [weak self] in self?.showPanelForClipboard() }
-        observeAnchorChanges()
-        countSubscription = model.$queue.sink { [weak self] queue in
-            self?.statusItem.button?.title = " \(queue.waitingCount)"
-            self?.reanchorVisiblePanel()
+        content.sizingOptions = []
+        panel.contentView = content
+        panel.setContentSize(initialSize)
+        NotificationCenter.default.addObserver(self, selector: #selector(reanchorVisiblePanel),
+                                              name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        if let button = statusItem.button {
+            button.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(self, selector: #selector(reanchorVisiblePanel),
+                                                  name: NSView.frameDidChangeNotification, object: button)
         }
-        inputSubscription = model.$queue.map { $0.items.map(\.id) }.removeDuplicates()
-            .combineLatest(model.$staged.map { $0.map(\.path) }.removeDuplicates())
-            .combineLatest(model.$settings.map { $0.options.outputFormat }.removeDuplicates())
-            .sink { [weak self] _ in self?.scheduleInputLayout() }
-        // WindowServer가 상태 막대 항목을 배치할 수 있도록 launch 콜백 다음 순서에 표시한다.
-        DispatchQueue.main.async { [self] in
-            showInitialPanelWhenReady(until: Date().addingTimeInterval(5))
+        subscription = model.$settings.map(\.clipboardEnabled).removeDuplicates().sink { [weak self] enabled in
+            self?.statusItem.button?.toolTip = enabled ? "HEIC 자동 변환 켜짐" : "HEIC 자동 변환 꺼짐"
         }
-    }
-
-    private func showInitialPanelWhenReady(until deadline: Date) {
-        if anchorGeometry() != nil {
-            if !panel.isVisible { togglePanel() }
-            if CommandLine.arguments.contains("--smoke-test") {
-                waitForPanelSmokeReadiness(until: deadline)
+        clipboardSubscription = model.$clipboardFiles.combineLatest(model.$message).sink { [weak self] _ in
+            self?.scheduleClipboardLayout()
+        }
+        noticeSubscription = model.$conversionNotice.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] notice in
+            guard let self, self.model.conversionNotice == notice else { return }
+            guard let notice, !self.panel.isVisible, let geometry = self.anchorGeometry() else {
+                self.noticeController.dismiss()
+                return
             }
-        } else if Date() < deadline {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-                showInitialPanelWhenReady(until: deadline)
-            }
-        } else {
-            print("메뉴 아이콘 배치 준비 시간 초과")
-            if CommandLine.arguments.contains("--smoke-test") { Task { await runPanelSmokeTest() } }
-        }
-    }
-
-    private func waitForPanelSmokeReadiness(until deadline: Date) {
-        if panel.isVisible, anchorGeometry() != nil {
-            positionPanel()
-            Task { await runPanelSmokeTest() }
-        } else if Date() < deadline {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-                waitForPanelSmokeReadiness(until: deadline)
-            }
-        } else {
-            print("패널 준비 시간 초과: 표시=\(panel.isVisible), 아이콘=\(statusItem.button != nil), 아이콘 창=\(statusItem.button?.window != nil), 화면 수=\(NSScreen.screens.count)")
-            Task { await runPanelSmokeTest() }
-        }
-    }
-
-    private func runPanelSmokeTest() async {
-        var passed = true
-        func check(_ label: String, _ condition: Bool) {
-            print("패널 검증 [\(label)]: \(condition ? "성공" : "실패")")
-            if !condition { passed = false }
-        }
-        check("최초 표시", panel.isVisible)
-        check("포커스 상실 시 유지 설정", !panel.hidesOnDeactivate)
-        check("플로팅 레벨", panel.level == .floating)
-        check("최초 배치와 크기", panelPlacementSmokeTest())
-        if let geometry = anchorGeometry() {
-            let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame,
-                                                size: PanelPlacement.defaultSize)
-            check("간결한 기본 크기", panel.frame.size == expected.size)
-        }
-        check("입력 모델", modelInputSmokeTest())
-        check("작업 오류 복구와 준비 거절 집계", await modelWorkerRecoverySmokeTest())
-        check("이미지 클립보드 복사와 파일 저장 분리", await clipboardConversionSmokeTest())
-        check("파일 추가 높이와 수동 크기 보존", await inputPanelSizingSmokeTest())
-        togglePanel(); check("메뉴 클릭 숨김", !panel.isVisible)
-        togglePanel(); check("메뉴 클릭 다시 표시", panel.isVisible)
-        let visibleMenu = makeStatusMenu()
-        check("열린 패널 메뉴와 종료 경로", visibleMenu.items.map(\.title) == ["패널 숨기기", "", "앱 종료"]
-            && visibleMenu.items[2].action == #selector(NSApplication.terminate(_:))
-            && visibleMenu.items[2].target === NSApp)
-        visibleMenu.performActionForItem(at: 0)
-        check("메뉴에서 패널 숨김", !panel.isVisible)
-        let hiddenMenu = makeStatusMenu()
-        check("숨긴 패널의 열기 메뉴", hiddenMenu.items[0].title == "패널 열기")
-        hiddenMenu.performActionForItem(at: 0)
-        check("메뉴에서 패널 다시 표시", panel.isVisible && statusItem.menu == nil)
-        statusItem.button?.performClick(nil)
-        check("버튼 액션으로 패널 숨김", !panel.isVisible)
-        statusItem.button?.performClick(nil)
-        check("버튼 액션으로 패널 다시 표시", panel.isVisible)
-        check("다시 표시한 배치와 크기", panelPlacementSmokeTest())
-        NSApp.deactivate()
-        check("비활성화 후 표시 유지", panel.isVisible)
-        _ = windowShouldClose(panel); check("닫기 후 숨김", !panel.isVisible)
-        // 비활성화·숨김의 WindowServer 응답이 안정된 뒤 자동 표시의 기준을 잡는다.
-        let focusDeadline = Date().addingTimeInterval(2)
-        var stableFocusSince = Date()
-        var observedActive = NSApp.isActive
-        var observedKeyWindow = NSApp.keyWindow
-        while Date() < focusDeadline, Date().timeIntervalSince(stableFocusSince) < 0.35 {
-            try? await Task.sleep(for: .milliseconds(20))
-            if NSApp.isActive != observedActive || NSApp.keyWindow !== observedKeyWindow {
-                observedActive = NSApp.isActive
-                observedKeyWindow = NSApp.keyWindow
-                stableFocusSince = Date()
+            self.noticeController.show(notice, anchor: geometry.anchor, visibleFrame: geometry.visibleFrame) { [weak self] in
+                guard let self else { return }
+                if !self.panel.isVisible { self.togglePanel() }
             }
         }
-        check("자동 표시 전 포커스 안정화", Date().timeIntervalSince(stableFocusSince) >= 0.35)
-        let wasActive = NSApp.isActive
-        let previousKeyWindow = NSApp.keyWindow
-        showPanelForClipboard(animated: false)
-        check("클립보드 자동 표시", panel.isVisible && panel.alphaValue == 1)
-        check("자동 표시 시 포커스 유지", NSApp.isActive == wasActive && NSApp.keyWindow === previousKeyWindow && !panel.isKeyWindow)
-        check("자동 표시 배치", panelPlacementSmokeTest())
-        let visibleFrame = panel.frame
-        showPanelForClipboard(animated: true)
-        check("이미 열린 패널 유지", panel.isVisible && panel.frame == visibleFrame && panelRevealTimer == nil)
-        hidePanel()
-        showPanelForClipboard(animated: true)
-        check("자동 표시 애니메이션 시작", panel.isVisible && panelRevealTimer != nil && panel.alphaValue == 0)
-        try? await Task.sleep(for: .milliseconds(350))
-        check("자동 표시 애니메이션 완료", panel.isVisible && panelRevealTimer == nil && panel.alphaValue == 1 && panelPlacementSmokeTest())
-        check("애니메이션 후 포커스 유지", NSApp.isActive == wasActive && NSApp.keyWindow === previousKeyWindow && !panel.isKeyWindow)
-        hidePanel()
-        showPanelForClipboard(animated: true)
-        hidePanel()
-        check("등장 도중 닫기", !panel.isVisible && panelRevealTimer == nil && panel.alphaValue == 1)
-        togglePanel(); check("닫기 후 다시 표시", panel.isVisible)
-        check("직접 열기와 CmdV 처리", panel.canBecomeKey && pasteShortcutSmokeTest())
-        model.shutdown()
-        print(passed ? "메뉴 막대 아래 패널 배치·표시·숨김·포커스 유지 확인 완료" : "패널 검증 실패")
-        exit(passed ? 0 : 1)
+        // 시작과 복사 감지는 패널을 표시하지 않는다. smoke만 별도 표시 경로를 사용한다.
+        if CommandLine.arguments.contains("--smoke-test") {
+            DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
+        }
     }
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
         if NSApp.currentEvent?.type == .rightMouseUp {
-            // 메뉴 추적 중에만 연결해 왼쪽 클릭의 패널 토글을 유지한다.
+            noticeController.dismiss()
             statusItem.menu = makeStatusMenu()
             defer { statusItem.menu = nil }
             sender.performClick(nil)
-        } else {
-            togglePanel()
-        }
+        } else { togglePanel() }
     }
 
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
-        let panelItem = NSMenuItem(title: panel.isVisible ? "패널 숨기기" : "패널 열기",
-                                   action: #selector(togglePanel), keyEquivalent: "")
-        panelItem.target = self
-        menu.addItem(panelItem)
+        let settings = NSMenuItem(title: "설정 열기…", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
         menu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "앱 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        quitItem.target = NSApp
-        menu.addItem(quitItem)
+        let quit = NSMenuItem(title: "앱 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp; menu.addItem(quit)
         return menu
     }
 
-    @objc func togglePanel() {
-        if panel.isVisible { hidePanel() }
+    @objc private func openSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 400),
+                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "HEIC Converter 설정"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: SettingsView(model: model))
+            window.center()
+            settingsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func togglePanel() {
+        if panel.isVisible { panel.orderOut(nil) }
         else {
             guard anchorGeometry() != nil else { return }
+            model.pollClipboard()
+            noticeController.dismiss()
             positionPanel()
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
-        }
-    }
-
-    /// 새 클립보드 파일은 보여 주되 사용 중인 앱의 키보드 포커스는 유지한다.
-    private func showPanelForClipboard(animated: Bool? = nil) {
-        guard !panel.isVisible, anchorGeometry() != nil else { return }
-        positionPanel()
-        let target = panel.frame
-        let shouldAnimate = animated ?? !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard shouldAnimate else {
-            panel.alphaValue = 1
-            panel.orderFrontRegardless()
-            return
-        }
-        // 이동량을 메뉴 막대와의 간격 안으로 제한해 화면 상단을 침범하지 않는다.
-        let distance = min(6, PanelPlacement.anchorGap)
-        panel.setFrame(target.offsetBy(dx: 0, dy: distance), display: false)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        let start = Date()
-        let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self else { timer.invalidate(); return }
-                let progress = min(1, Date().timeIntervalSince(start) / 0.22)
-                let eased = 1 - pow(1 - progress, 3)
-                self.panel.alphaValue = eased
-                self.panel.setFrame(target.offsetBy(dx: 0, dy: distance * (1 - eased)), display: true)
-                if progress == 1 {
-                    timer.invalidate(); self.panelRevealTimer = nil
-                    self.positionPanel()
-                }
-            }
-        }
-        panelRevealTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    private func hidePanel() {
-        panelRevealTimer?.invalidate(); panelRevealTimer = nil
-        panel.orderOut(nil)
-        panel.alphaValue = 1
-        positionPanel()
-    }
-
-    private func observeAnchorChanges() {
-        let center = NotificationCenter.default
-        center.addObserver(self, selector: #selector(reanchorVisiblePanel),
-                           name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        if let button = statusItem.button {
-            button.postsFrameChangedNotifications = true
-            center.addObserver(self, selector: #selector(reanchorVisiblePanel),
-                               name: NSView.frameDidChangeNotification, object: button)
-            if let window = button.window {
-                for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
-                             NSWindow.didChangeScreenNotification] {
-                    center.addObserver(self, selector: #selector(reanchorVisiblePanel), name: name, object: window)
-                }
-            }
         }
     }
 
@@ -287,31 +153,26 @@ final class DropPanel: NSPanel {
         guard anchor.width > 0, anchor.height > 0 else { return nil }
         let center = NSPoint(x: anchor.midX, y: anchor.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else { return nil }
-        // 생성 직후의 상태 막대 창은 (0, -11) 같은 임시 좌표를 가진다.
-        // 실제 화면 상단 메뉴 막대에 도착하기 전에는 창 크기와 위치를 계산하지 않는다.
         let menuBarHeight = max(NSStatusBar.system.thickness, anchor.height, screen.safeAreaInsets.top)
         guard center.y >= screen.frame.maxY - menuBarHeight - 2 else { return nil }
         return (anchor, screen.visibleFrame)
     }
 
     @objc private func reanchorVisiblePanel() {
-        if panel?.isVisible == true, panelRevealTimer == nil { positionPanel() }
+        if panel?.isVisible == true { positionPanel() }
+        if noticeController.isVisible, let geometry = anchorGeometry() {
+            noticeController.reanchor(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
+        }
     }
 
-    private func setSettingsExpanded(_ expanded: Bool) {
-        guard settingsExpanded != expanded else { return }
-        settingsExpanded = expanded
-        scheduleInputLayout()
-    }
-
-    private func scheduleInputLayout() {
-        guard !inputLayoutScheduled else { return }
-        inputLayoutScheduled = true
-        // @Published는 willSet에서 발행한다. 드롭→대기 목록 이동까지 합쳐서 계산한다.
+    private func scheduleClipboardLayout() {
+        guard !clipboardLayoutScheduled else { return }
+        clipboardLayoutScheduled = true
+        // 같은 복사 감지에서 목록을 비웠다 채우는 중간 상태는 접지 않는다.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.inputLayoutScheduled = false
-            if self.panelRevealTimer == nil { self.positionPanel() }
+            self.clipboardLayoutScheduled = false
+            self.positionPanel()
         }
     }
 
@@ -319,506 +180,387 @@ final class DropPanel: NSPanel {
         guard !isPositioningPanel, let geometry = anchorGeometry() else { return }
         isPositioningPanel = true
         defer { isPositioningPanel = false }
+        let isEmpty = model.clipboardFiles.isEmpty
+        var size = panel.frame.size
         let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
+        size.width = min(size.width, available.width)
+        let contentHeight = fittedPanelHeight(width: size.width)
+        size.height = isEmpty ? PanelPlacement.emptyHeight : max(contentHeight, populatedPanelHeight ?? 0)
         panel.minSize = NSSize(width: min(PanelPlacement.minimumSize.width, available.width),
-                               height: min(PanelPlacement.minimumSize.height, available.height))
+                               height: min(contentHeight, available.height))
         panel.maxSize = available.size
-        let size = NSSize(width: max(panel.frame.width, panel.minSize.width),
-                          height: max(userPreferredHeight, PanelPlacement.preferredHeight(
-                            fileCount: model.queue.items.count, stagedCount: model.staged.count, settingsExpanded: settingsExpanded, outputFormat: model.settings.options.outputFormat)))
         let frame = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: size)
-        let pointerX = PanelPlacement.pointerCenter(anchorX: statusIconCenterX() ?? geometry.anchor.midX, panelFrame: frame)
-        if panelChrome.pointerX != pointerX { panelChrome.pointerX = pointerX }
+        let button = statusItem.button!
+        let iconRect = button.cell?.imageRect(forBounds: button.bounds) ?? button.bounds
+        let iconX = button.window?.convertToScreen(button.convert(iconRect, to: nil)).midX ?? geometry.anchor.midX
+        panelChrome.pointerX = PanelPlacement.pointerCenter(anchorX: iconX, panelFrame: frame)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
-        lastPositionedHeight = panel.frame.height
     }
 
-    /// 대기 수 글자를 제외한 실제 이미지 중앙을 돌출부의 기준으로 사용한다.
-    private func statusIconCenterX() -> CGFloat? {
-        guard let button = statusItem.button, let window = button.window,
-              let imageRect = button.cell?.imageRect(forBounds: button.bounds), !imageRect.isEmpty else { return nil }
-        return window.convertToScreen(button.convert(imageRect, to: nil)).midX
+    private func fittedPanelHeight(width: CGFloat) -> CGFloat {
+        guard !model.clipboardFiles.isEmpty else { return PanelPlacement.emptyHeight }
+        let content = PanelView(model: model, chrome: panelChrome, measuresContent: true)
+            .frame(width: width).fixedSize(horizontal: false, vertical: true)
+        let hosting = NSHostingView(rootView: content)
+        if let appearance = panel?.effectiveAppearance { hosting.appearance = appearance }
+        return ceil(hosting.fittingSize.height)
     }
 
     func windowDidResize(_ notification: Notification) {
-        guard !isPositioningPanel, panelRevealTimer == nil else { return }
-        if abs(panel.frame.height - lastPositionedHeight) > 0.5 {
-            userPreferredHeight = panel.frame.height
-        }
+        guard !isPositioningPanel else { return }
+        if !model.clipboardFiles.isEmpty { populatedPanelHeight = panel.frame.height }
         reanchorVisiblePanel()
     }
-
-    private func panelPlacementSmokeTest() -> Bool {
-        guard let geometry = anchorGeometry() else {
-            print("메뉴 아이콘 화면 좌표 확인 실패: 아이콘=\(statusItem.button != nil), 아이콘 창=\(statusItem.button?.window != nil), 화면 수=\(NSScreen.screens.count), 패널=\(panel.frame)")
-            return false
-        }
-        let frame = panel.frame
-        let available = PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame)
-        let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, size: frame.size)
-        let passed = geometry.visibleFrame.contains(frame) && frame.maxY <= geometry.anchor.minY
-            && frame.width >= min(PanelPlacement.minimumSize.width, available.width)
-            && frame.height >= min(PanelPlacement.minimumSize.height, available.height)
-            && abs(frame.minX - expected.minX) < 1 && abs(frame.maxY - expected.maxY) < 1
-            && abs(panelChrome.pointerX - PanelPlacement.pointerCenter(
-                anchorX: statusIconCenterX() ?? geometry.anchor.midX, panelFrame: frame)) < 1
-        print("메뉴 아이콘 화면 좌표: \(geometry.anchor), 패널 화면 좌표: \(frame), 배치 검증: \(passed)")
-        return passed
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        panel.orderOut(nil)
     }
-
-    private func pasteShortcutSmokeTest() -> Bool {
-        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
-                                          timestamp: 0, windowNumber: panel.windowNumber, context: nil,
-                                          characters: "v", charactersIgnoringModifiers: "v", isARepeat: false,
-                                          keyCode: 9) else { return false }
-        let originalHandler = panel.onPaste
-        defer { panel.onPaste = originalHandler }
-        var pasteCount = 0
-        panel.onPaste = { pasteCount += 1 }
-        return panel.performKeyEquivalent(with: event) && pasteCount == 1
+    func applicationDidResignActive(_ notification: Notification) {
+        // 비활성화 중 임시로 숨긴 패널이 앱 재활성화 때 다시 나타나지 않도록 닫는다.
+        panel.orderOut(nil)
     }
-
-    private func inputPanelSizingSmokeTest() async -> Bool {
-        let originalQueue = model.queue
-        let originalStaged = model.staged
-        let originalHeight = userPreferredHeight
-        let originalExpanded = settingsExpanded
-        let originalFormat = model.settings.options.outputFormat
-        let originalWidth = panel.frame.width
-        defer {
-            model.queue = originalQueue; model.staged = originalStaged
-            userPreferredHeight = originalHeight
-            settingsExpanded = originalExpanded
-            model.settings.options.outputFormat = originalFormat
-            panel.setContentSize(NSSize(width: originalWidth, height: originalHeight))
-            positionPanel()
-        }
-        func settle(_ duration: TimeInterval = 0.08) async {
-            // 중첩 RunLoop 대신 실행권을 반환해 실제 AppKit 이벤트 루프가 갱신하도록 한다.
-            try? await Task.sleep(for: .seconds(duration))
-            // 메뉴 항목 수가 바뀌면 WindowServer의 아이콘 재배치가 뒤늦게 도착할 수 있다.
-            // 배치를 강제하지 않고 실제 높이·메뉴 기준 위치가 두 번 연속 안정될 때 검사한다.
-            let deadline = Date().addingTimeInterval(1)
-            var stableSamples = 0
-            while Date() < deadline {
-                if let geometry = anchorGeometry() {
-                    let expected = PanelPlacement.frame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame,
-                                                        size: NSSize(width: panel.frame.width, height: expectedHeight()))
-                    let stable = !inputLayoutScheduled && panelRevealTimer == nil
-                        && panel.frame.height == expected.height
-                        && abs(panel.frame.minX - expected.minX) < 1
-                        && abs(panel.frame.maxY - expected.maxY) < 1
-                    stableSamples = stable ? stableSamples + 1 : 0
-                    if stableSamples == 2 { return }
-                }
-                try? await Task.sleep(for: .milliseconds(20))
-            }
-            print("패널 높이·메뉴 아이콘 배치 안정화 시간 초과")
-        }
-        func expectedHeight() -> CGFloat {
-            guard let geometry = anchorGeometry() else { return 0 }
-            return min(PanelPlacement.availableFrame(anchor: geometry.anchor, visibleFrame: geometry.visibleFrame).height,
-                       max(userPreferredHeight, PanelPlacement.preferredHeight(fileCount: model.queue.items.count,
-                                                                               stagedCount: model.staged.count, settingsExpanded: settingsExpanded, outputFormat: model.settings.options.outputFormat)))
-        }
-        func checkHeight(_ label: String) -> Bool {
-            let result = panel.frame.height == expectedHeight()
-            print("높이 검증 [\(label)]: 실제 \(panel.frame.height), 기대 \(expectedHeight()), 수동 \(userPreferredHeight)")
-            return result
-        }
-        let top = panel.frame.maxY
-        let urls = (1...4).map { URL(fileURLWithPath: "/tmp/heic-panel-size-\($0).heic") }
-        model.queue.add([urls[0]]); await settle()
-        guard checkHeight("첫 파일"), panel.frame.maxY == top,
-              panel.frame.width == originalWidth else { return false }
-        setSettingsExpanded(true); await settle()
-        guard checkHeight("첫 파일·설정 펼침"), panel.frame.maxY == top,
-              panel.frame.width == originalWidth else { return false }
-        model.queue.add(Array(urls.dropFirst())); await settle()
-        guard checkHeight("여러 파일·설정 펼침"), panelPlacementSmokeTest() else { return false }
-        setSettingsExpanded(false); await settle()
-        guard checkHeight("여러 파일·설정 접기") else { return false }
-        panel.setContentSize(NSSize(width: originalWidth + 20, height: panel.frame.height)); await settle()
-        guard userPreferredHeight == originalHeight else { return false }
-        panel.setContentSize(NSSize(width: originalWidth, height: panel.frame.height)); await settle()
-        let height = panel.frame.height
-        model.queue.update(path: urls[0].path, status: .running); await settle()
-        guard panel.frame.height == height else { return false }
-        model.queue = QueueState(); await settle()
-        guard checkHeight("목록 비움") else { return false }
-        setSettingsExpanded(true); await settle()
-        guard checkHeight("빈 목록·설정 펼침") else { return false }
-        model.settings.options.outputFormat = "png"; await settle()
-        guard checkHeight("펼친 PNG로 전환") else { return false }
-        model.settings.options.outputFormat = "jpeg"; await settle()
-        guard checkHeight("펼친 JPEG로 전환") else { return false }
-        model.settings.options.outputFormat = originalFormat; await settle()
-        setSettingsExpanded(false); await settle()
-        guard checkHeight("빈 목록·설정 접기") else { return false }
-        model.staged = urls; await settle()
-        guard checkHeight("드롭 선택") else { return false }
-        model.queue.add(urls); model.staged = []; await settle()
-        guard checkHeight("대기 이동") else { return false }
-        model.queue = QueueState(); await settle()
-        panel.setContentSize(NSSize(width: originalWidth + 20, height: 730)); await settle()
-        let manualHeight = panel.frame.height
-        print("수동 크기 검증: \(panel.frame)")
-        model.queue.add([urls[0]]); await settle()
-        guard panel.frame.height == manualHeight, panel.frame.width == originalWidth + 20 else { return false }
-        setSettingsExpanded(true); await settle()
-        guard checkHeight("수동 높이·설정 펼침") else { return false }
-        setSettingsExpanded(false); await settle()
-        guard panel.frame.height == manualHeight, panel.frame.width == originalWidth + 20 else { return false }
-        hidePanel()
-        model.queue.add(Array(urls.dropFirst()))
-        showPanelForClipboard(animated: true)
-        setSettingsExpanded(true)
-        model.queue.add([URL(fileURLWithPath: "/tmp/heic-panel-size-5.heic")])
-        await settle(0.35)
-        return panel.frame.height == expectedHeight() && panelPlacementSmokeTest()
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool { hidePanel(); return false }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        model.shutdown {
-            // 즉시 종료 가능한 경우에도 terminateLater 응답 뒤에 완료를 전달한다.
-            DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
-        }
+        noticeController.dismiss()
+        model.shutdown { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
         return .terminateLater
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
+        noticeController.dismiss()
         model.shutdown()
-        panelRevealTimer?.invalidate(); panelRevealTimer = nil
         NotificationCenter.default.removeObserver(self)
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
     }
-}
 
-/// 이름이 지정된 임시 pasteboard와 별도 설정 저장소만 사용한다.
-@MainActor func modelInputSmokeTest() -> Bool {
-    let name = "heic-smoke-\(UUID().uuidString)"
-    let clipboard = NSPasteboard(name: NSPasteboard.Name(name))
-    guard let defaults = UserDefaults(suiteName: name) else { return false }
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-    defer {
-        clipboard.releaseGlobally(); defaults.removePersistentDomain(forName: name)
-        try? FileManager.default.removeItem(at: folder)
+    private func waitForSmokeAnchor(until deadline: Date) {
+        if anchorGeometry() != nil { Task { await runPanelSmokeTest() } }
+        else if Date() < deadline {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in waitForSmokeAnchor(until: deadline) }
+        } else { print("메뉴 아이콘 배치 시간 초과"); exit(1) }
     }
-    do {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let first = folder.appendingPathComponent("첫 파일.heic")
-        let second = folder.appendingPathComponent("두 번째.HEIC")
-        let third = folder.appendingPathComponent("새 파일.heic")
-        let unsupported = folder.appendingPathComponent("지원 안 함.jpg")
-        try Data([1]).write(to: first); try Data([2]).write(to: second)
-        try Data([3]).write(to: third); try Data([4]).write(to: unsupported)
-        guard duplicateNoticeSmokeTest(first: first, second: second, unsupported: unsupported,
-                                       clipboard: clipboard, defaults: defaults) else { return false }
-        guard bulkRemovalSmokeTest(first: first, second: second, third: third, unsupported: unsupported,
-                                   clipboard: clipboard, defaults: defaults) else { return false }
-        clipboard.writeObjects([first as NSURL])
-        let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
-        var automaticPresentationCount = 0
-        model.onClipboardFilesAdded = { automaticPresentationCount += 1 }
-        defer { model.shutdown() }
-        model.pollClipboard()
-        guard model.queue.items.isEmpty, automaticPresentationCount == 0 else { return false } // 시작 이전의 복사를 무시한다.
-        model.stage([first, second])
-        guard model.staged.count == 2, model.queue.items.isEmpty else { return false }
-        model.staged.removeAll() // 드롭 후 취소한 파일은 다시 입력할 수 있다.
-        model.stage([first, second]); model.acceptStaged(convert: false)
-        guard model.queue.items.count == 2, !model.active, automaticPresentationCount == 0 else { return false }
-        model.paste()
-        guard model.queue.items.count == 2, automaticPresentationCount == 0 else { return false }
-        model.queue.remove(InputValidator.canonicalPath(first))
-        model.paste()
-        guard model.queue.items.count == 2, automaticPresentationCount == 0 else { return false }
-        model.setClipboard(false)
-        model.queue.remove(InputValidator.canonicalPath(second))
-        clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
-        model.pollClipboard()
-        guard model.queue.items.count == 1, automaticPresentationCount == 0 else { return false }
-        model.setClipboard(true); model.pollClipboard()
-        guard model.queue.items.count == 1, automaticPresentationCount == 0 else { return false } // 재개 시 기존 복사를 무시한다.
-        clipboard.clearContents(); clipboard.writeObjects([second as NSURL])
-        model.pollClipboard()
-        guard model.queue.items.count == 2, !model.active, automaticPresentationCount == 1 else { return false }
-        clipboard.clearContents(); clipboard.writeObjects([second as NSURL, unsupported as NSURL])
-        model.pollClipboard()
-        guard model.queue.items.count == 2, automaticPresentationCount == 1 else { return false }
-        model.stage([third])
-        clipboard.clearContents(); clipboard.writeObjects([third as NSURL])
-        model.pollClipboard()
-        guard model.queue.items.count == 2, automaticPresentationCount == 1 else { return false }
-        model.staged.removeAll()
-        clipboard.clearContents(); clipboard.writeObjects([third as NSURL, unsupported as NSURL])
-        model.pollClipboard()
-        guard model.queue.items.count == 3, !model.active, automaticPresentationCount == 2 else { return false }
-        model.settings.outputDirectory = folder.path
-        model.setClipboard(false)
-        guard AppSettings.load(from: defaults).outputDirectory == folder.path,
-              !AppSettings.load(from: defaults).clipboardEnabled else { return false }
-        // 화면에서 사용하는 중첩 값 변경도 저장되며 새 모델이 마지막 설정을 복구해야 한다.
-        for (format, quality, compression, metadata, conflict) in [
-            ("png", QualityPreset.medium, PNGCompressionPreset.small, "strip", "skip"),
-            ("jpeg", QualityPreset.raw, PNGCompressionPreset.none, "preserve", "overwrite"),
-        ] {
-            let output = folder.appendingPathComponent("설정 복구 \(format)").path
-            model.settings.options.outputFormat = format
-            model.settings.options.qualityPreset = quality
-            model.settings.options.pngCompressionPreset = compression
-            model.settings.options.metadata = metadata
-            model.settings.options.onConflict = conflict
-            model.settings.outputDirectory = output
-            let restored = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
-            let recovered = restored.settings
-            restored.shutdown()
-            guard recovered.options.outputFormat == format,
-                  recovered.options.jpegQuality == quality.jpegQuality,
-                  recovered.options.pngCompression == compression.compressionLevel,
-                  recovered.options.metadata == metadata,
-                  recovered.options.onConflict == conflict,
-                  recovered.outputDirectory == output,
-                  !recovered.clipboardEnabled else { return false }
+
+    private func runPanelSmokeTest() async {
+        var passed = true
+        let focusTarget = [NSWorkspace.shared.frontmostApplication,
+                           NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first]
+            .compactMap { $0 }.first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        func waitForFocus(_ window: NSWindow) async -> Bool {
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if NSApp.isActive && window.isKeyWindow { return true }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return false
         }
-        print("드롭·붙여넣기·중복·거절·감지 재개·자동 표시 이벤트·설정 기억 확인 완료")
-        return true
-    } catch { fputs("입력 모델 검증 실패: \(error.localizedDescription)\n", stderr); return false }
-}
-
-/// 일괄 제거는 목록과 중복 안내만 변경하고 예약 작업·원본·결과 파일을 보존한다.
-@MainActor private func bulkRemovalSmokeTest(first: URL, second: URL, third: URL, unsupported: URL,
-                                            clipboard: NSPasteboard, defaults: UserDefaults) -> Bool {
-    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
-    defer { model.shutdown() }
-    let ids = [first, second, third].map(InputValidator.canonicalPath)
-    let duplicateReason = "이미 목록에 있는 파일입니다."
-    func duplicatePaths() -> Set<String> {
-        Set(model.notices.filter { $0.reason == duplicateReason }.map(\.path))
-    }
-    model.stage([first, second, third]); model.acceptStaged(convert: false)
-    model.queue.schedule(paths: [ids[0]], settings: model.settings)
-    guard let activeJob = model.queue.next() else { return false }
-    model.queue.update(path: ids[0], status: .running)
-    model.queue.schedule(paths: [ids[1]], settings: model.settings)
-    guard let scheduledJob = model.queue.jobs.first else { return false }
-    model.queue.update(path: ids[2], status: .failed)
-    model.stage([first, second, third, unsupported])
-    guard duplicatePaths() == Set([first, second, third].map(\.path)) else { return false }
-    model.removeSelected(Set(ids))
-    guard model.queue.knownPaths == Set(ids.prefix(2)),
-          duplicatePaths() == Set([first.path, second.path]),
-          model.queue.activeJob?.id == activeJob.id,
-          model.queue.jobs.map(\.id) == [scheduledJob.id] else { return false }
-    do {
-        let folder = third.deletingLastPathComponent()
-        let completed = folder.appendingPathComponent("일괄 제거 완료.heic")
-        let result = folder.appendingPathComponent("일괄 제거 결과.jpeg")
-        try Data([7]).write(to: completed); try Data([8]).write(to: result)
-        model.stage([completed], updateNotices: false); model.acceptStaged(convert: false)
-        model.queue.update(path: InputValidator.canonicalPath(completed), status: .succeeded, destination: result.path)
-        model.removeAll()
-        guard model.queue.knownPaths == Set(ids.prefix(2)),
-              duplicatePaths() == Set([first.path, second.path]),
-              model.queue.activeJob?.id == activeJob.id,
-              model.queue.jobs.map(\.id) == [scheduledJob.id] else { return false }
-        model.queue.finish(); model.removeAll()
-        guard model.queue.knownPaths == [ids[1]], duplicatePaths() == [second.path],
-              model.queue.next()?.id == scheduledJob.id else { return false }
-        model.queue.update(path: ids[1], status: .failed); model.queue.finish(); model.removeAll()
-        guard model.queue.items.isEmpty, duplicatePaths().isEmpty,
-              model.notices == [InputRejection(path: unsupported.path, reason: "확장자가 .heic인 파일만 지원합니다.")],
-              try Data(contentsOf: first) == Data([1]),
-              try Data(contentsOf: second) == Data([2]),
-              try Data(contentsOf: third) == Data([3]),
-              try Data(contentsOf: completed) == Data([7]),
-              try Data(contentsOf: result) == Data([8]) else { return false }
-    } catch { return false }
-    print("선택·전체 목록 제거·예약 작업 보존·중복 안내 정리·원본과 결과 파일 보존 확인 완료")
-    return true
-}
-
-/// 목록에서 사라진 파일의 중복 안내만 정리하고 다른 입력 오류는 유지한다.
-@MainActor private func duplicateNoticeSmokeTest(first: URL, second: URL, unsupported: URL,
-                                                clipboard: NSPasteboard, defaults: UserDefaults) -> Bool {
-    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
-    defer { model.shutdown() }
-    let duplicateReason = "이미 목록에 있는 파일입니다."
-    let formatReason = "확장자가 .heic인 파일만 지원합니다."
-    func hasDuplicate(_ file: URL) -> Bool {
-        model.notices.contains { $0.path == file.path && $0.reason == duplicateReason }
-    }
-    func hasFormatError() -> Bool {
-        model.notices.contains { $0.path == unsupported.path && $0.reason == formatReason }
-    }
-    model.stage([first]); model.acceptStaged(convert: false)
-    model.stage([first, unsupported])
-    guard hasDuplicate(first), hasFormatError() else { return false }
-    // 상위 폴더의 심볼릭 링크를 포함하는 원래 경로도 canonical 목록에서 제거한다.
-    model.remove(first.path)
-    guard model.queue.items.isEmpty, !hasDuplicate(first), hasFormatError() else { return false }
-
-    model.stage([second])
-    model.stage([second, unsupported])
-    guard hasDuplicate(second), hasFormatError() else { return false }
-    model.cancelStaged()
-    guard model.staged.isEmpty, !hasDuplicate(second), hasFormatError() else { return false }
-
-    model.stage([first]); model.acceptStaged(convert: false)
-    model.stage([first, unsupported])
-    let path = InputValidator.canonicalPath(first)
-    model.queue.schedule(paths: [path], settings: model.settings)
-    model.remove(path)
-    guard model.queue.items.count == 1, model.queue.items[0].status.locked,
-          hasDuplicate(first), hasFormatError() else { return false }
-    model.queue.update(path: path, status: .succeeded)
-    model.clearCompleted()
-    guard model.queue.items.isEmpty, !hasDuplicate(first), hasFormatError() else { return false }
-
-    // 선택 파일의 안내는 같은 파일이 대기 목록에 남아 있으면 여전히 유효하다.
-    model.stage([first]); model.acceptStaged(convert: false)
-    model.stage([first, second, unsupported])
-    model.cancelStaged()
-    guard hasDuplicate(first), hasFormatError(), model.queue.items.count == 1 else { return false }
-    model.remove(path)
-    guard !hasDuplicate(first), hasFormatError() else { return false }
-    // 느린 이전 드롭은 파일을 추가하되 최신 드롭의 오류 안내를 덮지 않는다.
-    model.stage([unsupported])
-    model.stage([second], updateNotices: false)
-    guard model.staged.count == 1, hasFormatError() else { return false }
-    model.cancelStaged()
-    do {
-        let folder = first.deletingLastPathComponent()
-        let source = folder.appendingPathComponent("교체 전 파일.heic")
-        let target = folder.appendingPathComponent("링크 대상 파일.heic")
-        try Data([5]).write(to: source); try Data([6]).write(to: target)
-        let sourceID = InputValidator.canonicalPath(source)
-        let targetID = InputValidator.canonicalPath(target)
-        model.stage([source, target]); model.acceptStaged(convert: false)
-        model.stage([source, unsupported])
-        guard hasDuplicate(source), hasFormatError() else { return false }
-        try FileManager.default.removeItem(at: source)
-        try FileManager.default.createSymbolicLink(at: source, withDestinationURL: target)
-        model.remove(sourceID)
-        guard model.queue.knownPaths == [targetID], !hasDuplicate(source), hasFormatError() else { return false }
-        model.remove(targetID)
-    } catch { return false }
-    print("중복 안내 목록 제거·선택 취소·완료 정리·잠금·다른 입력 오류 보존 확인 완료")
-    return true
-}
-
-/// 실제 AppModel과 번들 worker의 오류·취소 이벤트를 격리된 파일·설정으로 검증한다.
-@MainActor func modelWorkerRecoverySmokeTest() async -> Bool {
-    let name = "heic-worker-recovery-\(UUID().uuidString)"
-    let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(name)
-    let clipboard = NSPasteboard(name: NSPasteboard.Name(name))
-    guard let defaults = UserDefaults(suiteName: name) else { return false }
-    let model = AppModel(startClipboard: false, pasteboard: clipboard, defaults: defaults)
-    defer {
-        model.shutdown(); clipboard.releaseGlobally(); defaults.removePersistentDomain(forName: name)
-        try? FileManager.default.removeItem(at: folder)
-    }
-    func check(_ label: String, _ value: Bool) -> Bool {
-        print("작업 모델 검증 [\(label)]: \(value ? "성공" : "실패")")
-        if !value {
-            print("집계: \(model.message)")
-            for item in model.queue.items { print("항목: \(item.url.lastPathComponent), \(item.status.rawValue), \(item.detail ?? ""), \(item.destination ?? "")") }
+        func check(_ label: String, _ condition: Bool) {
+            print("패널 검증 [\(label)]: \(condition ? "성공" : "실패")")
+            if !condition { passed = false }
         }
-        return value
+        check("시작 시 숨김", !panel.isVisible)
+        if let button = statusItem.button, let imageRect = button.cell?.imageRect(forBounds: button.bounds) {
+            check("메뉴 아이콘 좌우 여백", imageRect.minX - button.bounds.minX >= 4
+                && button.bounds.maxX - imageRect.maxX >= 4)
+            if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"],
+               let bitmap = button.bitmapImageRepForCachingDisplay(in: button.bounds) {
+                button.cacheDisplay(in: button.bounds, to: bitmap)
+                try? bitmap.representation(using: .png, properties: [:])?.write(
+                    to: URL(fileURLWithPath: directory).appendingPathComponent("status-icon.png"))
+            }
+        } else { check("메뉴 아이콘 좌우 여백", false) }
+        togglePanel()
+        check("빈 목록 간결한 높이", panel.frame.height == PanelPlacement.emptyHeight)
+        if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"], let view = panel.contentView {
+            for width in [PanelPlacement.defaultSize.width, PanelPlacement.minimumSize.width] {
+                panel.setContentSize(NSSize(width: width, height: PanelPlacement.emptyHeight))
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                view.layoutSubtreeIfNeeded()
+                if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    try? bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent("empty-\(Int(width)).png"))
+                }
+                model.setClipboard(false)
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                view.layoutSubtreeIfNeeded()
+                if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    try? bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent("empty-disabled-\(Int(width)).png"))
+                }
+                model.setClipboard(true)
+            }
+            panel.setContentSize(NSSize(width: PanelPlacement.defaultSize.width, height: PanelPlacement.emptyHeight))
+        }
+        togglePanel()
+        // 사용자 파일 대신 합성된 긴 이름의 비HEIC 항목으로 현재 목록과 스크롤을 확인한다.
+        let fixture = URL(fileURLWithPath: InputValidator.canonicalPath(FileManager.default.temporaryDirectory), isDirectory: true)
+            .appendingPathComponent("heic-ui-smoke-\(UUID().uuidString)")
+        func cleanupFixture() {
+            smokePasteboard?.releaseGlobally()
+            if let smokeDomain { UserDefaults(suiteName: smokeDomain)?.removePersistentDomain(forName: smokeDomain) }
+            try? FileManager.default.removeItem(at: fixture)
+        }
+        do {
+            try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+            // 사진 1~3개를 실제 worker로 변환한 뒤 목록 아래의 빈 공간을 확인한다.
+            let context = CGContext(data: nil, width: 24, height: 16, bitsPerComponent: 8, bytesPerRow: 96,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            context.setFillColor(CGColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 24, height: 16))
+            let sources = try (1...3).map { index -> URL in
+                let url = fixture.appendingPathComponent("합성 사진 \(index).heic")
+                guard let encoder = CGImageDestinationCreateWithURL(url as CFURL, UTType.heic.identifier as CFString, 1, nil) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                CGImageDestinationAddImage(encoder, context.makeImage()!, nil)
+                guard CGImageDestinationFinalize(encoder) else { throw CocoaError(.fileWriteUnknown) }
+                return url
+            }
+            var previousHeight: CGFloat = 0
+            for count in 1...3 {
+                populatedPanelHeight = nil
+                smokePasteboard?.clearContents()
+                _ = smokePasteboard?.writeObjects(Array(sources.prefix(count)) as [NSURL])
+                model.pollClipboard()
+                let deadline = Date().addingTimeInterval(30)
+                while model.active && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+                try? await Task.sleep(for: .milliseconds(30))
+                check("사진 \(count)개 실제 변환", model.clipboardFiles.count == count
+                    && model.clipboardFiles.allSatisfy { $0.status == .completed })
+                if !panel.isVisible { togglePanel() }
+                for width in [PanelPlacement.defaultSize.width, PanelPlacement.minimumSize.width] {
+                    panel.setContentSize(NSSize(width: width, height: panel.frame.height))
+                    populatedPanelHeight = nil
+                    positionPanel()
+                    try? await Task.sleep(for: .milliseconds(30))
+                    panel.contentView?.layoutSubtreeIfNeeded()
+                    func findScroll(in view: NSView) -> NSScrollView? {
+                        if let scroll = view as? NSScrollView { return scroll }
+                        for child in view.subviews { if let scroll = findScroll(in: child) { return scroll } }
+                        return nil
+                    }
+                    if let view = panel.contentView, let scroll = findScroll(in: view), let document = scroll.documentView {
+                        check("사진 \(count)개·폭 \(Int(width)) 목록 아래 여백 없음",
+                            abs(scroll.contentView.bounds.height - document.frame.height) <= 1)
+                        print("사진 패널 실측: \(count)개 · 폭 \(width) · 높이 \(panel.frame.height)pt")
+                        if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"],
+                           let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                            view.cacheDisplay(in: view.bounds, to: bitmap)
+                            try? bitmap.representation(using: .png, properties: [:])?.write(to:
+                                URL(fileURLWithPath: directory).appendingPathComponent("converted-\(count)-\(Int(width)).png"))
+                        }
+                    } else { check("사진 목록 측정", false) }
+                }
+                check("파일 수에 따라 높이 증가", panel.frame.height > previousHeight)
+                previousHeight = panel.frame.height
+            }
+            let video = NSPasteboardItem()
+            let reference = try PropertyListSerialization.data(fromPropertyList: ["mediaType": 2, "mediaSubtypes": 0], format: .binary, options: 0)
+            video.setData(reference, forType: .init("com.apple.photos.object-reference.asset"))
+            video.setData(try Data(contentsOf: sources[0]), forType: .init(UTType.heic.identifier))
+            smokePasteboard?.clearContents(); _ = smokePasteboard?.writeObjects([video])
+            model.pollClipboard()
+            check("동영상 표시·자동 변환 제외", !model.active && model.conversionNotice == nil
+                && model.clipboardFiles.first?.isVideo == true)
+            panel.setContentSize(NSSize(width: PanelPlacement.defaultSize.width, height: panel.frame.height))
+            populatedPanelHeight = nil; positionPanel()
+            try? await Task.sleep(for: .milliseconds(30))
+            if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"],
+               let view = panel.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.layoutSubtreeIfNeeded(); view.cacheDisplay(in: view.bounds, to: bitmap)
+                try? bitmap.representation(using: .png, properties: [:])?.write(
+                    to: URL(fileURLWithPath: directory).appendingPathComponent("video-excluded.png"))
+            }
+            if panel.isVisible { togglePanel() }
+            populatedPanelHeight = nil
+            let urls = try (1...12).map { index -> URL in
+                let url = fixture.appendingPathComponent("\(index)-화면 너비보다 긴 파일 이름과 현재 클립보드 항목 보존 확인.txt")
+                try Data("합성 문서".utf8).write(to: url)
+                return url
+            }
+            smokePasteboard?.clearContents()
+            _ = smokePasteboard?.writeObjects(urls as [NSURL])
+        } catch { check("합성 목록 준비", false) }
+        model.pollClipboard()
+        check("감지 시 숨김 유지", !panel.isVisible)
+        check("현재 다중 파일 목록", model.clipboardFiles.count == 12)
+        togglePanel()
+        check("좌클릭 표시", panel.isVisible)
+        check("파일 목록 콘텐츠 높이", panel.frame.height == fittedPanelHeight(width: panel.frame.width))
+        if let geometry = anchorGeometry() {
+            check("화면 경계와 돌출부", geometry.visibleFrame.contains(panel.frame)
+                && panel.frame.maxY <= geometry.anchor.minY && panelChrome.pointerX > 0)
+        } else { check("화면 좌표", false) }
+        check("패널 포커스 획득", await waitForFocus(panel))
+        check("다른 앱 포커스 이동 요청", focusTarget?.activate(options: [.activateIgnoringOtherApps]) == true)
+        let deactivationDeadline = Date().addingTimeInterval(2)
+        while (NSApp.isActive || panel.isVisible) && Date() < deactivationDeadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        check("앱 비활성화 시 패널 닫힘", !NSApp.isActive && !panel.isVisible)
+        NSApp.activate(ignoringOtherApps: true)
+        try? await Task.sleep(for: .milliseconds(200))
+        check("재활성화 시 닫힘 유지", !panel.isVisible)
+        togglePanel()
+        check("포커스 상실 후 메뉴로 다시 열기", await waitForFocus(panel) && panel.isVisible)
+        if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"] {
+            for width in [PanelPlacement.defaultSize.width, PanelPlacement.minimumSize.width] {
+                panel.setContentSize(NSSize(width: width, height: panel.frame.height))
+                populatedPanelHeight = nil
+                positionPanel()
+                panel.contentView?.layoutSubtreeIfNeeded()
+                if let view = panel.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    try? bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: directory).appendingPathComponent("panel-\(Int(width)).png"))
+                }
+            }
+        }
+        let populatedFrame = panel.frame
+        let resizedHeight = populatedFrame.height + 60
+        panel.setContentSize(NSSize(width: populatedFrame.width, height: resizedHeight))
+        // 다른 파일을 복사할 때 중간의 빈 배열 때문에 높이가 초기화되지 않아야 한다.
+        let urls = (smokePasteboard?.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
+        check("파일 교체 검증 원본 준비", urls.count == 12)
+        smokePasteboard?.clearContents(); _ = smokePasteboard?.writeObjects(urls as [NSURL])
+        model.pollClipboard()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("파일 교체 시 사용자 높이 유지", panel.frame.height == resizedHeight)
+        smokePasteboard?.clearContents(); model.pollClipboard()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("표시 중 빈 목록으로 축소", panel.isVisible && panel.frame.height == PanelPlacement.emptyHeight
+            && panel.frame.width == populatedFrame.width && panel.frame.maxY == populatedFrame.maxY)
+        smokePasteboard?.clearContents()
+        _ = smokePasteboard?.writeObjects(urls as [NSURL]); model.pollClipboard()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("표시 중 파일 목록 높이 복원", model.clipboardFiles.count == 12
+            && panel.isVisible && panel.frame.height == resizedHeight
+            && panel.frame.maxY == populatedFrame.maxY)
+        togglePanel(); check("좌클릭 숨김", !panel.isVisible)
+        let menu = makeStatusMenu()
+        check("우클릭 설정과 종료", menu.items.map(\.title) == ["설정 열기…", "", "앱 종료"]
+            && menu.items[2].target === NSApp)
+        togglePanel()
+        check("설정 전 패널 포커스", await waitForFocus(panel))
+        menu.performActionForItem(at: 0)
+        if let settingsWindow {
+            check("별도 설정 창으로 포커스 이동 시 패널 닫힘",
+                  await waitForFocus(settingsWindow) && settingsWindow.isVisible && !panel.isVisible)
+        } else { check("별도 설정 창", false) }
+        if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"],
+           let view = settingsWindow?.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.layoutSubtreeIfNeeded(); view.cacheDisplay(in: view.bounds, to: bitmap)
+            try? bitmap.representation(using: .png, properties: [:])?.write(
+                to: URL(fileURLWithPath: directory).appendingPathComponent("settings.png"))
+        }
+        settingsWindow?.orderOut(nil)
+        check("메뉴 알림 상호작용", await runNoticeSmokeTest())
+        var workerNoticePhases: Set<String> = []
+        check("자동 변환 worker", await clipboardConversionSmokeTest { [self] notice in
+            guard let notice, let geometry = anchorGeometry() else { noticeController.dismiss(); return }
+            workerNoticePhases.insert(String(describing: notice.phase))
+            noticeController.show(notice, anchor: geometry.anchor, visibleFrame: geometry.visibleFrame) {}
+        })
+        check("실제 worker 진행·완료·실패 알림", workerNoticePhases.isSuperset(of: ["preparing", "converting", "completed", "failed"]))
+        noticeController.dismiss()
+        model.shutdown()
+        cleanupFixture()
+        exit(passed ? 0 : 1)
     }
-    func waitUntilIdle() async -> Bool {
-        let deadline = Date().addingTimeInterval(30)
-        while model.active && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
-        return check("작업 종료", !model.active && model.queue.jobs.isEmpty)
+
+    private func runNoticeSmokeTest() async -> Bool {
+        guard let geometry = anchorGeometry() else { return false }
+        var passed = true
+        func check(_ label: String, _ condition: Bool) {
+            print("알림 검증 [\(label)]: \(condition ? "성공" : "실패")")
+            if !condition { passed = false }
+        }
+        let controller = ClipboardNoticeController(completedDuration: 0.25, failureDuration: 0.35)
+        defer { controller.dismiss() }
+        func notice(_ phase: ClipboardConversionNotice.Phase, id: UUID = UUID()) -> ClipboardConversionNotice {
+            ClipboardConversionNotice(id: id, sourceChangeCount: 1, copiedFileCount: 3, heicCount: 2,
+                phase: phase, completedCount: phase == .completed ? 2 : (phase == .converting ? 1 : 0),
+                detail: phase == .failed ? "변환하지 못했습니다. 전체 원본을 유지했습니다." : nil)
+        }
+        func show(_ value: ClipboardConversionNotice, onOpen: @escaping () -> Void = {}) {
+            controller.show(value, anchor: geometry.anchor, visibleFrame: geometry.visibleFrame, onOpen: onOpen)
+        }
+        func render(_ filename: String) {
+            if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"] {
+                do { try controller.render(to: URL(fileURLWithPath: directory).appendingPathComponent(filename)) }
+                catch { check("알림 렌더링", false) }
+            }
+        }
+        NSApp.deactivate()
+        let wasActive = NSApp.isActive
+        let keyWindow = NSApp.keyWindow
+        let firstID = UUID()
+        show(notice(.preparing, id: firstID))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        check("포커스 유지·메뉴 아래 배치", controller.isVisible && NSApp.isActive == wasActive
+            && NSApp.keyWindow === keyWindow && geometry.visibleFrame.contains(controller.frame)
+            && controller.frame.maxY <= geometry.anchor.minY && !panel.isVisible)
+        render("notice-preparing.png")
+        let preparingFrame = controller.frame
+        show(notice(.converting, id: firstID))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        render("notice-converting.png")
+        let convertingFrame = controller.frame
+        show(notice(.completed, id: firstID))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        render("notice-completed.png")
+        let completedFrame = controller.frame
+        check("진행 막대 높이 반영·완료 시 축소", convertingFrame.height > completedFrame.height
+            && completedFrame.height > 80)
+        check("상태 변경 시 메뉴 기준점 유지", preparingFrame.maxY == convertingFrame.maxY
+            && convertingFrame.maxY == completedFrame.maxY)
+        let compactNotice = ClipboardConversionNotice(id: UUID(), sourceChangeCount: 1,
+            copiedFileCount: 2, heicCount: 2, phase: .completed, completedCount: 2, detail: nil)
+        show(compactNotice)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        render("notice-heic-only.png")
+        check("혼합 파일 개수 행이 없으면 축소", controller.frame.height < completedFrame.height)
+        print("알림 실측 높이: 준비 \(preparingFrame.height), 진행 \(convertingFrame.height), 완료 \(completedFrame.height), HEIC만 \(controller.frame.height)pt")
+        let secondID = UUID()
+        show(notice(.converting, id: secondID))
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        check("이전 타이머가 새 진행 알림을 닫지 않음", controller.isVisible && controller.currentNotice?.id == secondID)
+        controller.dismiss()
+        show(notice(.completed, id: secondID))
+        check("닫은 작업의 후속 알림 숨김", !controller.isVisible)
+        let failureID = UUID()
+        show(notice(.failed, id: failureID))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        render("notice-failed.png")
+        let shortFailureFrame = controller.frame
+        show(ClipboardConversionNotice(id: failureID, sourceChangeCount: 1, copiedFileCount: 3,
+            heicCount: 2, phase: .failed, completedCount: 0,
+            detail: "변환한 파일을 클립보드에 반영하지 못했습니다. 전체 원본을 유지했습니다."))
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        render("notice-failed-wrapped.png")
+        check("두 줄 실패 안내 높이 반영", controller.frame.height > shortFailureFrame.height
+            && controller.frame.maxY == shortFailureFrame.maxY)
+        print("알림 실측 높이: 짧은 실패 \(shortFailureFrame.height), 두 줄 실패 \(controller.frame.height)pt")
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        check("실패 자동 닫힘", !controller.isVisible)
+        show(notice(.completed))
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        check("완료 자동 닫힘", !controller.isVisible)
+        var opened = false
+        show(notice(.preparing)) { [self] in opened = true; togglePanel() }
+        controller.openDetails()
+        check("알림 클릭으로 상세 패널 열기", opened && panel.isVisible && !controller.isVisible)
+        if panel.isVisible { togglePanel() }
+        return passed
     }
-    func add(_ urls: [URL]) { model.stage(urls); model.acceptStaged(convert: false) }
-    do {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let source = folder.appendingPathComponent("정상.heic")
-        guard let context = CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
-                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
-              let image = context.makeImage(),
-              let encoder = CGImageDestinationCreateWithURL(source as CFURL, UTType.heic.identifier as CFString, 1, nil) else { return false }
-        CGImageDestinationAddImage(encoder, image, nil)
-        guard CGImageDestinationFinalize(encoder) else { return false }
-        let original = try Data(contentsOf: source)
-        let removed = folder.appendingPathComponent("삭제됨.heic")
-        model.settings.outputDirectory = folder.appendingPathComponent("거절 결과").path
-
-        // 실행 직전에 제거된 입력만 있는 작업도 실패 1개로 집계한다.
-        try original.write(to: removed); add([removed]); try FileManager.default.removeItem(at: removed)
-        model.startWaiting()
-        guard await waitUntilIdle(), check("전체 준비 거절 집계", model.queue.items.map(\.status) == [.failed]
-            && model.message == "완료: 성공 0, 건너뜀 0, 실패 1") else { return false }
-        model.removeAll()
-
-        // 실행 실패와 준비 거절이 섞여 있어도 각 입력을 한 번씩 센다.
-        let corrupt = folder.appendingPathComponent("손상.heic")
-        try Data([1]).write(to: corrupt); try original.write(to: removed)
-        add([removed, corrupt, source]); try FileManager.default.removeItem(at: removed)
-        model.startWaiting()
-        guard await waitUntilIdle(), check("준비 거절과 실행 실패 집계", model.queue.items.map(\.status) == [.failed, .failed, .succeeded]
-            && model.message == "완료: 성공 1, 건너뜀 0, 실패 2") else { return false }
-        model.removeAll()
-
-        // prepare 직후 취소해도 거절 수는 집계하고 수락한 미처리 입력은 대기로 돌아간다.
-        try original.write(to: removed); add([removed, source]); try FileManager.default.removeItem(at: removed)
-        model.settings.outputDirectory = folder.appendingPathComponent("취소 결과").path
-        model.startWaiting(); model.cancel()
-        guard await waitUntilIdle(), check("취소와 준비 거절 집계", model.queue.items.map(\.status) == [.failed, .waiting]
-            && model.message == "취소: 성공 0, 건너뜀 0, 실패 1"
-            && !FileManager.default.fileExists(atPath: model.settings.outputDirectory)) else { return false }
-        model.removeAll()
-
-        // 준비 오류가 연달아 발생해도 후속 PNG 예약과 저장 위치 스냅샷을 유지한다.
-        let first = folder.appendingPathComponent("첫 작업.heic")
-        let second = folder.appendingPathComponent("둘째 작업.heic")
-        try original.write(to: first); try original.write(to: second)
-        add([first, second, source])
-        let blocked = folder.appendingPathComponent("폴더 대신 파일")
-        try Data([1]).write(to: blocked)
-        model.settings.outputDirectory = blocked.path
-        model.queue.schedule(paths: [InputValidator.canonicalPath(first)], settings: model.settings)
-        model.settings.outputDirectory = folder.appendingPathComponent("잘못된 옵션").path
-        model.settings.options.outputFormat = "invalid"
-        model.queue.schedule(paths: [InputValidator.canonicalPath(second)], settings: model.settings)
-        let reserved = folder.appendingPathComponent("예약 PNG 결과")
-        model.settings.outputDirectory = reserved.path
-        model.settings.options.outputFormat = "png"
-        model.settings.options.pngCompression = 9
-        model.settings.options.metadata = "strip"
-        model.queue.schedule(paths: [InputValidator.canonicalPath(source)], settings: model.settings)
-        model.settings.outputDirectory = folder.appendingPathComponent("이후 변경 결과").path
-        model.settings.options.outputFormat = "jpeg"
-        model.startWaiting(); model.cancel()
-        guard await waitUntilIdle(), check("준비 오류 이후 예약 자동 실행", model.queue.items.map(\.status) == [.failed, .failed, .succeeded]
-            && model.queue.items.prefix(2).allSatisfy { $0.detail?.hasPrefix("invalid_request:") == true }) else { return false }
-        let canonicalSource = URL(fileURLWithPath: InputValidator.canonicalPath(source))
-        let destination = reserved.appendingPathComponent(canonicalSource.deletingPathExtension().lastPathComponent + ".png")
-        let reportedDestination = model.queue.items.last?.destination.map { InputValidator.canonicalPath(URL(fileURLWithPath: $0)) }
-        guard check("예약 옵션·저장 폴더 보존", reportedDestination == InputValidator.canonicalPath(destination)
-            && FileManager.default.fileExists(atPath: destination.path)
-            && CGImageSourceCreateWithURL(destination as CFURL, nil) != nil
-            && !FileManager.default.fileExists(atPath: model.settings.outputDirectory)
-            && model.message == "완료: 성공 1, 건너뜀 0, 실패 0") else { return false }
-        model.removeAll()
-
-        // 다음 독립 작업에 이전의 준비 거절 수가 누적되지 않는다.
-        add([source]); model.startWaiting()
-        guard await waitUntilIdle(), check("다음 작업 집계 초기화", model.queue.items.map(\.status) == [.succeeded]
-            && model.message == "완료: 성공 1, 건너뜀 0, 실패 0"),
-              check("합성 원본 보존", try Data(contentsOf: source) == original
-                && Data(contentsOf: first) == original && Data(contentsOf: second) == original) else { return false }
-        return true
-    } catch { fputs("작업 오류 복구 검증 실패: \(error.localizedDescription)\n", stderr); return false }
 }
 
 /// 합성 HEIC만 사용하여 설치된 번들의 worker와 프로토콜을 실제 변환까지 확인한다.
 func smokeTest() -> Int32 {
     guard fileThumbnailSmokeTest() else { return 1 }
     guard let resources = Bundle.main.resourceURL else { return 1 }
-    let folder = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("heic-smoke-\(UUID().uuidString)")
+    let folder = URL(fileURLWithPath: InputValidator.canonicalPath(FileManager.default.temporaryDirectory), isDirectory: true).appendingPathComponent("heic-smoke-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: folder) }
     do { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) } catch { return 1 }
     let source = folder.appendingPathComponent("한글 합성 사진.heic")
@@ -892,12 +634,6 @@ final class SmokeState: @unchecked Sendable {
     }
 }
 
-if CommandLine.arguments.contains("--model-worker-smoke-test") {
-    MainActor.assumeIsolated {
-        _ = Task { exit(await modelWorkerRecoverySmokeTest() ? 0 : 1) }
-    }
-    RunLoop.main.run()
-}
 if CommandLine.arguments.contains("--smoke-test") {
     let result = smokeTest()
     if result != 0 { exit(result) }

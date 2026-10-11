@@ -3,6 +3,19 @@ import CoreGraphics
 @testable import ConverterKit
 
 final class PanelPlacementTests: XCTestCase {
+    func testEmptyClipboardContractsDownwardWithoutMovingIconAnchor() {
+        let anchor = CGRect(x: 880, y: 878, width: 32, height: 22)
+        let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
+        let populated = PanelPlacement.frame(anchor: anchor, visibleFrame: visible, size: PanelPlacement.defaultSize)
+        let empty = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
+            size: CGSize(width: populated.width, height: PanelPlacement.emptyHeight))
+        XCTAssertLessThan(empty.height, populated.height)
+        XCTAssertEqual(empty.maxY, populated.maxY)
+        XCTAssertEqual(empty.midX, populated.midX)
+        XCTAssertEqual(empty.width, populated.width)
+        XCTAssertTrue(visible.contains(empty))
+    }
+
     func testFileHeightGrowsForThumbnailsAndStopsAfterThreeRows() {
         XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 0, stagedCount: 0), 532)
         XCTAssertEqual(PanelPlacement.preferredHeight(fileCount: 1, stagedCount: 0), 632)
@@ -42,7 +55,7 @@ final class PanelPlacementTests: XCTestCase {
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
         let empty = PanelPlacement.frame(anchor: anchor, visibleFrame: visible, size: PanelPlacement.defaultSize)
         let populated = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
-            size: CGSize(width: 420, height: PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0)))
+            size: CGSize(width: PanelPlacement.defaultSize.width, height: PanelPlacement.preferredHeight(fileCount: 3, stagedCount: 0)))
         XCTAssertEqual(empty.maxY, populated.maxY)
         XCTAssertEqual(empty.width, populated.width)
         XCTAssertGreaterThan(populated.height, empty.height)
@@ -57,7 +70,7 @@ final class PanelPlacementTests: XCTestCase {
         let visible = CGRect(x: 0, y: 40, width: 1440, height: 838)
         let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                          size: PanelPlacement.defaultSize)
-        XCTAssertEqual(frame.size, CGSize(width: 420, height: 532))
+        XCTAssertEqual(frame.size, CGSize(width: 320, height: 532))
         XCTAssertEqual(frame.midX, anchor.midX)
         XCTAssertEqual(frame.maxY, anchor.minY - 3)
         XCTAssertTrue(visible.contains(frame))
@@ -112,7 +125,7 @@ final class PanelPlacementTests: XCTestCase {
         let visible = CGRect(x: -1440, y: 0, width: 1440, height: 878)
         let anchor = CGRect(x: -90, y: 878, width: 50, height: 22)
         let iconX: CGFloat = -78
-        for width in [CGFloat(380), 420, 660] {
+        for width in [PanelPlacement.minimumSize.width, PanelPlacement.defaultSize.width, 660] {
             let frame = PanelPlacement.frame(anchor: anchor, visibleFrame: visible,
                                             size: CGSize(width: width, height: 532))
             XCTAssertEqual(frame.minX + PanelPlacement.pointerCenter(anchorX: iconX, panelFrame: frame), iconX)
