@@ -36,6 +36,7 @@ bash packaging/macos/build.sh
 
 ```sh
 .venv-app-build/bin/python packaging/macos/validate_app.py 'dist/macos/HEIC Converter.app'
+.venv-app-build/bin/python packaging/macos/test_panel_startup.py 'dist/macos/HEIC Converter.app'
 .venv-app-build/bin/python packaging/macos/validate_dmg.py dist/macos/HEIC-Converter-0.3.0-arm64.dmg
 .venv-app-build/bin/python -m build --no-isolation
 .venv-app-build/bin/python packaging/macos/validate_python_dist.py dist
@@ -50,6 +51,15 @@ DMG를 열고 HEIC Converter를 Applications로 드래그한다. 첫 실행이 �
 `.github/workflows/macos.yml`은 Apple Silicon `macos-15`와 `macos-26`에서 Python 검사, Swift 검사, 앱/worker/DMG 설치본 실행과 Python 배포 파일 검증 후 CI 아티팩트를 업로드한다. PR에서 릴리스를 게시하거나 main에 머지하지 않는다. 앱 버전은 `Info.plist`, Python 버전은 `pyproject.toml`에서 독립적으로 관리한다. 배포 담당자는 앱 전용 `macos-v<앱 버전>` 태그의 검증한 DMG·체크섬을 GitHub Releases에 게시한다. Python 릴리스는 별도의 `v<Python 버전>` 태그와 wheel·sdist로 PyPI에 게시하며 앱 전용 변경은 PyPI에 업로드하지 않는다. 이미 게시된 PyPI 메타데이터를 덮어쓰지 않는다.
 
 자동 smoke 검증은 설치한 worker의 실제 변환과 앱의 프로토콜 연결을 확인한다. 이름 있는 pasteboard에서 자동 변환·혼합 항목 보존·부분 실패·끄기·정상 종료 복구와 패널/설정 창도 smoke로 확인한다. Photos·Finder·카카오톡의 실제 붙여넣기와 접근 권한 검증은 별도로 수행한다. 로컬 OS에서 성공한 결과를 macOS 15 실기 검증으로 기록하지 않는다.
+
+## 새 실행 직후 패널 검증
+
+`build.sh`는 기존 앱 smoke 뒤 `test_panel_startup.py`로 일반 LaunchServices 실행과
+정상 종료를 두 번 확인한다. named pasteboard·별도 설정에서 상태 버튼의 실제
+클릭 핸들러를 통과하며 첫 표시·반복 토글·포커스 이동을 검사한다.
+같은 실행파일명의 앱이 이미 실행 중이면 중복 실행 없이 실패하므로 빌드 전에 정상 종료한다.
+합성 이벤트가 WindowServer의 실제 메뉴바 입력을 대신하지는 않는다.
+실제 클릭 결과와 선택적 계측은 [이슈 #11 기록](../../docs/macos-issue11-panel-startup.md)을 따른다.
 
 ## 이슈 #7 후속 검증 범위
 
