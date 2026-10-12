@@ -153,6 +153,8 @@ Defaults remain JPEG, JPEG quality 90, PNG compression 6, and metadata `safe`.
 Previously saved conversion values are retained. Legacy `outputDirectory` and
 `onConflict` settings are preserved but excluded from the automatic conversion UI.
 The CLI/TUI retains its existing output paths, conflict policies, and controls.
+Restoring defaults resets the visible format, quality, compression, and metadata
+options while preserving legacy paths, conflict settings, and the current pause state.
 
 The [PR #9 record from 2026-10-11 (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)
 covered Photos HEIC copy, synthetic original/edited/multiple photos, and video-poster
@@ -176,6 +178,8 @@ and [the remaining-validation follow-up (Korean)](https://github.com/jaehunshin-
 for current results, test totals, and KakaoTalk verification status. The historical
 Python-core-unchanged scope applies to PR #9; the follow-up fixes native HDR primary
 image selection while preserving CLI/TUI and existing SDR fallback policies.
+Changes to the original issue requirements and the checklist audit are recorded in
+[the issue #7 scope audit (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md).
 
 App packages use ad-hoc signing and are not notarized. DMG packaging does not bypass
 Gatekeeper. Verify a released DMG's checksum, install the app into Applications, and
