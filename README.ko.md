@@ -143,6 +143,8 @@ HEIC를 복사하고 완료를 기다린 뒤 대상 앱에서 기존 **⌘V**로
 저장한 변환 옵션 수치를 유지합니다. 기존 `outputDirectory`와 `onConflict`는
 레거시 설정으로 보존하되 자동 변환 UI에서 제외합니다. CLI/TUI의 출력 경로,
 충돌 정책과 조작 방식은 유지합니다.
+기본값 복원은 화면의 형식·품질·압축·메타데이터만 초기화하며 레거시 저장 경로·충돌
+정책과 현재 일시정지 상태는 유지합니다.
 
 [2026-10-11 PR #9 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)에서는 Photos HEIC 복사,
 합성 원본·편집·다중 사진과 동영상 포스터 제외를 확인했습니다. Finder에는 변환 파일
@@ -160,7 +162,8 @@ macOS 15·26 Apple Silicon에서도 커밋 `bdbde95`의 테스트, 앱 빌드·D
 일반 복사 JPEG는 재변환 없이 앱 실행·정상 종료 후 전체 표현의 타입·바이트·세대가
 보존됐습니다. 수신 앱은 지원하는 표현을 선택하므로 모든 항목의 붙여넣기는 별도 검증
 대상입니다. 현재 결과와 테스트 수, 카카오톡 후속 실기 상태는
-[남은 검증 후속 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md), 지원 계약은
+[남은 검증 후속 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md), 구현 중 변경 계약과 체크리스트 판정은
+[이슈 #7 범위 감사](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md), 지원 계약은
 [클립보드 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)을 참고하세요. Python 코어를 수정하지
 않았다는 설명은 PR #9 당시 범위입니다. 후속 범위에는 네이티브 HDR 대표 이미지 선택
 수정이 포함되며 CLI/TUI 및 기존 SDR fallback 정책은 유지합니다.

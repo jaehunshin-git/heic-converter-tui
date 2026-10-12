@@ -4,6 +4,7 @@
 결과·미검증 항목은 당시 상태를 보존하며 현재 완료 여부를 뜻하지 않는다. 특히 당시
 Photos HEIC 게시 결과가 현재 Photos 보관함 URL의 지원을 보장하지 않는다.
 최신 결과와 테스트 수는 [남은 검증 후속 기록](macos-issue7-remaining-validation.md)을 따른다.
+구현 중 바뀐 계약과 현재 이슈 종료 조건은 [변경 계약 감사](macos-issue7-scope-audit.md)를 따른다.
 
 ## 현재 후속 범위
 
