@@ -8,9 +8,18 @@ import UniformTypeIdentifiers
 final class ClipboardPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func keyDown(with event: NSEvent) {
+        // 읽기 전용 목록에는 행별 포커스를 만들지 않고 패널에서도 스크롤 키를 받는다.
+        if let scroll = contentView?.firstPanelScrollView(), scroll.scrollWithKeyboard(event) { return }
+        super.keyDown(with: event)
+    }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
+    private static var isKeyboardTest: Bool {
+        CommandLine.arguments.contains("--keyboard-test") || Bundle.main.object(forInfoDictionaryKey: "HEICKeyboardTest") as? Bool == true
+    }
     private let model: AppModel
     private var statusItem: NSStatusItem!
     private var panel: ClipboardPanel!
@@ -25,9 +34,10 @@ final class ClipboardPanel: NSPanel {
     private var isPositioningPanel = false
     private var smokePasteboard: NSPasteboard?
     private var smokeDomain: String?
+    private var keyboardFixture: URL?
 
     override init() {
-        if CommandLine.arguments.contains("--smoke-test") {
+        if CommandLine.arguments.contains("--smoke-test") || Self.isKeyboardTest {
             let name = "heic-panel-smoke-\(UUID().uuidString)"
             let board = NSPasteboard(name: .init(name))
             smokePasteboard = board; smokeDomain = name
@@ -41,6 +51,7 @@ final class ClipboardPanel: NSPanel {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        installApplicationMenu()
         // 사진 클립보드 실루엣을 가운데 배치하고 좌우 여백을 확보한다.
         statusItem = NSStatusBar.system.statusItem(withLength: 32)
         if let button = statusItem.button {
@@ -102,11 +113,15 @@ final class ClipboardPanel: NSPanel {
         // 시작과 복사 감지는 패널을 표시하지 않는다. smoke만 별도 표시 경로를 사용한다.
         if CommandLine.arguments.contains("--smoke-test") {
             DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
+        } else if Self.isKeyboardTest {
+            DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
         }
     }
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        let event = NSApp.currentEvent
+        // 일반 좌클릭만 패널을 토글한다. 키보드·접근성 활성화와 Control 클릭은 메뉴로 진입한다.
+        if event?.type != .leftMouseUp || event?.modifierFlags.contains(.control) == true {
             noticeController.dismiss()
             statusItem.menu = makeStatusMenu()
             defer { statusItem.menu = nil }
@@ -117,10 +132,14 @@ final class ClipboardPanel: NSPanel {
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
         let pause = NSMenuItem(title: model.clipboardEnabled ? "자동 변환 일시정지" : "자동 변환 다시 시작",
-                               action: #selector(toggleAutomaticConversion), keyEquivalent: "")
+                               action: #selector(toggleAutomaticConversion), keyEquivalent: "p")
+        pause.keyEquivalentModifierMask = [.command, .shift]
         pause.target = self
         menu.addItem(pause)
         menu.addItem(.separator())
+        let clipboard = NSMenuItem(title: "현재 클립보드 보기", action: #selector(showPanel), keyEquivalent: "1")
+        clipboard.target = self
+        menu.addItem(clipboard)
         let settings = NSMenuItem(title: "설정 열기…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -128,6 +147,31 @@ final class ClipboardPanel: NSPanel {
         let quit = NSMenuItem(title: "앱 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp; menu.addItem(quit)
         return menu
+    }
+
+    private func installApplicationMenu() {
+        let menu = NSMenu()
+        let application = NSMenuItem(title: "HEIC Converter", action: nil, keyEquivalent: "")
+        application.submenu = makeStatusMenu()
+        let close = NSMenuItem(title: "창 닫기", action: #selector(closeCurrentWindow), keyEquivalent: "w")
+        close.target = self
+        application.submenu?.insertItem(close, at: 4)
+        menu.addItem(application)
+        NSApp.mainMenu = menu
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(closeCurrentWindow) { return NSApp.keyWindow != nil }
+        if menuItem.action == #selector(toggleAutomaticConversion) {
+            menuItem.title = model.clipboardEnabled ? "자동 변환 일시정지" : "자동 변환 다시 시작"
+        }
+        return true
+    }
+
+    @objc private func closeCurrentWindow() {
+        // 닫기 버튼이 없는 패널은 performClose의 경고음 경로를 피하고 숨긴다.
+        if NSApp.keyWindow === panel { panel.orderOut(nil) }
+        else { NSApp.keyWindow?.performClose(nil) }
     }
 
     @objc private func toggleAutomaticConversion() {
@@ -150,14 +194,16 @@ final class ClipboardPanel: NSPanel {
 
     @objc private func togglePanel() {
         if panel.isVisible { panel.orderOut(nil) }
-        else {
-            guard anchorGeometry() != nil else { return }
-            model.pollClipboard()
-            noticeController.dismiss()
-            positionPanel()
-            NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
-        }
+        else { showPanel() }
+    }
+
+    @objc private func showPanel() {
+        guard anchorGeometry() != nil else { return }
+        model.pollClipboard()
+        noticeController.dismiss()
+        positionPanel()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     private func anchorGeometry() -> (anchor: NSRect, visibleFrame: NSRect)? {
@@ -234,6 +280,11 @@ final class ClipboardPanel: NSPanel {
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Finder·Spotlight에서 실행 중인 앱을 다시 열면 마우스 없이 패널로 진입할 수 있다.
+        showPanel()
+        return false
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         noticeController.dismiss()
         model.shutdown { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
@@ -244,10 +295,39 @@ final class ClipboardPanel: NSPanel {
         model.shutdown()
         NotificationCenter.default.removeObserver(self)
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        if let keyboardFixture {
+            smokePasteboard?.releaseGlobally()
+            if let smokeDomain { UserDefaults(suiteName: smokeDomain)?.removePersistentDomain(forName: smokeDomain) }
+            try? FileManager.default.removeItem(at: keyboardFixture)
+        }
+    }
+
+    // 전용 클립보드·설정·합성 파일로 대화형 검증을 준비한다.
+    private func prepareKeyboardTest() {
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("heic-keyboard-\(UUID().uuidString)")
+        keyboardFixture = fixture
+        do {
+            try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+            let files = try (1...12).map { index -> NSURL in
+                let url = fixture.appendingPathComponent("\(index)-키보드 스크롤 검증용 합성 문서.txt")
+                try Data("합성 문서".utf8).write(to: url)
+                return url as NSURL
+            }
+            smokePasteboard?.clearContents()
+            _ = smokePasteboard?.writeObjects(files)
+            model.pollClipboard()
+            openSettings()
+            showPanel()
+            print("키보드 실기: 전용 클립보드·설정, 합성 파일 \(files.count)개, 전체 키보드 접근 \(NSApp.isFullKeyboardAccessEnabled)")
+            fflush(stdout)
+        } catch { print("키보드 실기 준비 실패: \(error)"); exit(1) }
     }
 
     private func waitForSmokeAnchor(until deadline: Date) {
-        if anchorGeometry() != nil { Task { await runPanelSmokeTest() } }
+        if anchorGeometry() != nil {
+            if Self.isKeyboardTest { prepareKeyboardTest() }
+            else { Task { await runPanelSmokeTest() } }
+        }
         else if Date() < deadline {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in waitForSmokeAnchor(until: deadline) }
         } else { print("메뉴 아이콘 배치 시간 초과"); exit(1) }
@@ -452,8 +532,8 @@ final class ClipboardPanel: NSPanel {
             && panel.frame.maxY == populatedFrame.maxY)
         togglePanel(); check("좌클릭 숨김", !panel.isVisible)
         let menu = makeStatusMenu()
-        check("우클릭 일시정지·설정·종료", menu.items.map(\.title) == ["자동 변환 일시정지", "", "설정 열기…", "", "앱 종료"]
-            && menu.items[4].target === NSApp)
+        check("우클릭 일시정지·패널·설정·종료", menu.items.map(\.title) == ["자동 변환 일시정지", "", "현재 클립보드 보기", "설정 열기…", "", "앱 종료"]
+            && menu.items[5].target === NSApp)
         menu.performActionForItem(at: 0)
         check("메뉴에서 자동 변환 일시정지", !model.clipboardEnabled
             && statusItem.button?.image?.accessibilityDescription == "HEIC Converter — 자동 변환 일시정지됨")
@@ -464,11 +544,12 @@ final class ClipboardPanel: NSPanel {
             && statusItem.button?.image?.accessibilityDescription == PhotoClipboardIconGeometry.accessibilityDescription)
         togglePanel()
         check("설정 전 패널 포커스", await waitForFocus(panel))
-        menu.performActionForItem(at: 2)
+        menu.performActionForItem(at: 3)
         if let settingsWindow {
             check("별도 설정 창으로 포커스 이동 시 패널 닫힘",
                   await waitForFocus(settingsWindow) && settingsWindow.isVisible && !panel.isVisible)
         } else { check("별도 설정 창", false) }
+        check("기본 키보드 명령과 목록", await runKeyboardSmokeTest())
         if let directory = ProcessInfo.processInfo.environment["HEIC_UI_SMOKE_DIR"],
            let view = settingsWindow?.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
             view.layoutSubtreeIfNeeded(); view.cacheDisplay(in: view.bounds, to: bitmap)
@@ -488,6 +569,63 @@ final class ClipboardPanel: NSPanel {
         model.shutdown()
         cleanupFixture()
         exit(passed ? 0 : 1)
+    }
+
+    private func runKeyboardSmokeTest() async -> Bool {
+        var passed = true
+        func check(_ label: String, _ condition: @autoclosure () -> Bool) async {
+            let deadline = Date().addingTimeInterval(2)
+            while !condition() && Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+            let result = condition()
+            print("키보드 검증 [\(label)]: \(result ? "성공" : "실패")")
+            if !result { passed = false }
+        }
+        func press(_ characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) async {
+            guard let window = NSApp.keyWindow,
+                  let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                      context: nil, characters: characters, charactersIgnoringModifiers: characters.lowercased(),
+                      isARepeat: false, keyCode: keyCode) else { passed = false; return }
+            // 액션을 직접 호출하지 않고 실제 앱 이벤트 큐와 key-equivalent/responder 경로를 통과한다.
+            NSApp.postEvent(event, atStart: false)
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        openSettings()
+        try? await Task.sleep(for: .milliseconds(100))
+        await press("1", keyCode: 18, flags: .command)
+        await check("설정에서 ⌘1 패널 표시", panel.isVisible && panel.isKeyWindow)
+        await press("1", keyCode: 18, flags: .command)
+        await check("⌘1은 표시된 패널 유지", panel.isVisible)
+        let generation = smokePasteboard?.changeCount
+        await press("P", keyCode: 35, flags: [.command, .shift])
+        await check("⌘⇧P 일시정지", !model.clipboardEnabled && smokePasteboard?.changeCount == generation)
+        await press("P", keyCode: 35, flags: [.command, .shift])
+        await check("⌘⇧P 다시 시작", model.clipboardEnabled && smokePasteboard?.changeCount == generation)
+        if let scroll = panel.contentView?.firstPanelScrollView(), let document = scroll.documentView {
+            await check("목록이 실제 first responder", panel.makeFirstResponder(scroll) && panel.firstResponder === scroll)
+            await press("\u{F72B}", keyCode: 119)
+            await check("End 마지막 행까지 스크롤", abs(scroll.contentView.bounds.maxY - document.bounds.maxY) <= 1)
+            await press("\u{F729}", keyCode: 115)
+            await check("Home 첫 행까지 스크롤", abs(scroll.contentView.bounds.minY - document.bounds.minY) <= 1)
+        } else { await check("스크롤 responder", false) }
+        await press("\u{1B}", keyCode: 53)
+        await check("목록 포커스에서도 Escape 닫기", !panel.isVisible && model.clipboardEnabled
+            && smokePasteboard?.changeCount == generation)
+        openSettings()
+        try? await Task.sleep(for: .milliseconds(100))
+        await press("1", keyCode: 18, flags: .command)
+        await press("w", keyCode: 13, flags: .command)
+        await check("⌘W 패널 숨기기·변환 유지", !panel.isVisible && model.clipboardEnabled)
+        openSettings()
+        try? await Task.sleep(for: .milliseconds(100))
+        await press("1", keyCode: 18, flags: .command)
+        await press(",", keyCode: 43, flags: .command)
+        await check("⌘, 설정 열기", settingsWindow?.isKeyWindow == true && !panel.isVisible)
+        await press("w", keyCode: 13, flags: .command)
+        await check("⌘W 설정 닫기·앱 계속 실행", settingsWindow?.isVisible == false && model.clipboardEnabled)
+        openSettings()
+        try? await Task.sleep(for: .milliseconds(100))
+        return passed
     }
 
     private func runNoticeSmokeTest() async -> Bool {
