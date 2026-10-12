@@ -209,6 +209,8 @@ private struct OverlayScrollView<Content: View>: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
+        scrollView.focusRingType = .exterior
+        scrollView.setAccessibilityLabel("현재 클립보드 파일 목록")
         let hosting = NSHostingView(rootView: hostedContent(context: context))
         hosting.sizingOptions = [.intrinsicContentSize]
         hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -232,13 +234,52 @@ private struct OverlayScrollView<Content: View>: NSViewRepresentable {
             .environment(\.locale, context.environment.locale)
             .environment(\.isEnabled, context.environment.isEnabled))
     }
+}
 
-    private final class PanelScrollView: NSScrollView {
-        // 이 패널은 시스템 선호가 변경돼도 스크롤바 공간을 차감하지 않는다.
-        override var scrollerStyle: NSScroller.Style {
-            get { super.scrollerStyle }
-            set { super.scrollerStyle = .overlay }
+extension NSView {
+    func firstPanelScrollView() -> PanelScrollView? {
+        if let scroll = self as? PanelScrollView { return scroll }
+        return subviews.lazy.compactMap { $0.firstPanelScrollView() }.first
+    }
+}
+
+final class PanelScrollView: NSScrollView {
+    override var acceptsFirstResponder: Bool { true }
+    // 기본 NSScrollView의 문서 뷰 포커스 위임 대신 읽기 전용 목록 자체가 키를 받는다.
+    override func becomeFirstResponder() -> Bool { true }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { NSBezierPath(rect: bounds).fill() }
+
+    override func keyDown(with event: NSEvent) {
+        if !scrollWithKeyboard(event) { super.keyDown(with: event) }
+    }
+
+    @discardableResult func scrollWithKeyboard(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let document = documentView else { return false }
+        let bounds = contentView.bounds
+        let minimum = document.bounds.minY
+        let maximum = max(minimum, document.bounds.maxY - bounds.height)
+        let direction: CGFloat = document.isFlipped ? 1 : -1
+        var y = bounds.minY
+        switch event.keyCode {
+        case 125: y += direction * 32 // ↓
+        case 126: y -= direction * 32 // ↑
+        case 121: y += direction * bounds.height // Page Down
+        case 116: y -= direction * bounds.height // Page Up
+        case 115: y = document.isFlipped ? minimum : maximum // Home
+        case 119: y = document.isFlipped ? maximum : minimum // End
+        default: return false
         }
+        contentView.scroll(to: NSPoint(x: bounds.minX, y: min(maximum, max(minimum, y))))
+        reflectScrolledClipView(contentView)
+        return true
+    }
+
+    // 이 패널은 시스템 선호가 변경돼도 스크롤바 공간을 차감하지 않는다.
+    override var scrollerStyle: NSScroller.Style {
+        get { super.scrollerStyle }
+        set { super.scrollerStyle = .overlay }
     }
 }
 
