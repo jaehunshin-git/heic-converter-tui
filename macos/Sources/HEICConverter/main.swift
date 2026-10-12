@@ -16,7 +16,7 @@ final class ClipboardPanel: NSPanel {
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate {
     private static var isKeyboardTest: Bool {
         CommandLine.arguments.contains("--keyboard-test") || Bundle.main.object(forInfoDictionaryKey: "HEICKeyboardTest") as? Bool == true
     }
@@ -37,6 +37,7 @@ final class ClipboardPanel: NSPanel {
     private var smokeDomain: String?
     private var keyboardFixture: URL?
     private var startupLeftClickCount = 0
+    private var statusMenuOpenCount = 0
     private lazy var deferredPanelDismissal = FocusDismissalScheduler(
         shouldWaitForMouseUp: { NSEvent.pressedMouseButtons & 1 != 0 },
         shouldDismiss: { [weak self] in
@@ -147,14 +148,28 @@ final class ClipboardPanel: NSPanel {
         let event = NSApp.currentEvent
         // 일반 좌클릭만 패널을 토글한다. 키보드·접근성 활성화와 Control 클릭은 메뉴로 진입한다.
         if StatusItemInteraction.opensMenu(for: event) {
-            noticeController.dismiss()
-            statusItem.menu = makeStatusMenu()
-            defer { statusItem.menu = nil }
-            sender.performClick(nil)
+            openStatusMenu()
         } else {
             if Self.isPanelStartupTest { startupLeftClickCount += 1 }
             togglePanel()
         }
+    }
+
+    @objc private func openStatusMenu() {
+        guard let button = statusItem?.button else { return }
+        deferredPanelDismissal.cancel()
+        tracePanel("상태 메뉴 열기")
+        noticeController.dismiss()
+        statusItem.menu = makeStatusMenu()
+        statusItem.menu?.delegate = self
+        defer { statusItem.menu = nil }
+        button.performClick(nil)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === statusItem?.menu else { return }
+        statusMenuOpenCount += 1
+        tracePanel("상태 메뉴 표시")
     }
 
     private func makeStatusMenu() -> NSMenu {
@@ -184,6 +199,11 @@ final class ClipboardPanel: NSPanel {
         let close = NSMenuItem(title: "창 닫기", action: #selector(closeCurrentWindow), keyEquivalent: "w")
         close.target = self
         application.submenu?.insertItem(close, at: 4)
+        let statusMenu = NSMenuItem(title: "메뉴바 메뉴 열기", action: #selector(openStatusMenu),
+                                    keyEquivalent: "\r")
+        statusMenu.keyEquivalentModifierMask = .control
+        statusMenu.target = self
+        application.submenu?.insertItem(statusMenu, at: 5)
         menu.addItem(application)
         NSApp.mainMenu = menu
     }
@@ -661,51 +681,87 @@ final class ClipboardPanel: NSPanel {
             print("키보드 검증 [\(label)]: \(result ? "성공" : "실패")")
             if !result { passed = false }
         }
-        func press(_ characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) async {
-            guard let window = NSApp.keyWindow,
-                  let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+        func press(_ characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = [],
+                   in target: NSWindow?, closeMenu: Bool = false) async {
+            guard let window = target else {
+                await check("키 \(keyCode) 입력 대상 창", false)
+                return
+            }
+            await check("키 \(keyCode) 입력 전 포커스 준비",
+                        NSApp.isActive && window.isVisible && window.isKeyWindow && NSApp.keyWindow === window)
+            guard NSApp.isActive && window.isVisible && window.isKeyWindow && NSApp.keyWindow === window else { return }
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
                       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                       context: nil, characters: characters, charactersIgnoringModifiers: characters.lowercased(),
-                      isARepeat: false, keyCode: keyCode) else { passed = false; return }
+                      isARepeat: false, keyCode: keyCode) else {
+                await check("키 \(keyCode) 이벤트 생성", false)
+                return
+            }
+            let escape = closeMenu ? NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: event.timestamp + 0.001, windowNumber: window.windowNumber,
+                context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}",
+                isARepeat: false, keyCode: 53) : nil
+            if closeMenu && escape == nil {
+                await check("메뉴 닫기 Escape 이벤트 생성", false)
+                return
+            }
             // 액션을 직접 호출하지 않고 실제 앱 이벤트 큐와 key-equivalent/responder 경로를 통과한다.
             NSApp.postEvent(event, atStart: false)
-            try? await Task.sleep(for: .milliseconds(100))
+            // 메뉴의 중첩 추적 루프에 갇히지 않도록 Escape도 양보 없이 미리 게시한다.
+            if let escape { NSApp.postEvent(escape, atStart: false) }
+            // 이벤트 큐에 실행 기회를 준 뒤 각 명령의 실제 결과를 아래 check에서 기다린다.
+            try? await Task.sleep(for: .milliseconds(20))
         }
         openSettings()
-        try? await Task.sleep(for: .milliseconds(100))
-        await press("1", keyCode: 18, flags: .command)
+        await press("1", keyCode: 18, flags: .command, in: settingsWindow)
         await check("설정에서 ⌘1 패널 표시", panel.isVisible && panel.isKeyWindow)
-        await press("1", keyCode: 18, flags: .command)
+        await press("1", keyCode: 18, flags: .command, in: panel)
         await check("⌘1은 표시된 패널 유지", panel.isVisible)
         let generation = smokePasteboard?.changeCount
-        await press("P", keyCode: 35, flags: [.command, .shift])
+        await press("P", keyCode: 35, flags: [.command, .shift], in: panel)
         await check("⌘⇧P 일시정지", !model.clipboardEnabled && smokePasteboard?.changeCount == generation)
-        await press("P", keyCode: 35, flags: [.command, .shift])
+        await press("P", keyCode: 35, flags: [.command, .shift], in: panel)
         await check("⌘⇧P 다시 시작", model.clipboardEnabled && smokePasteboard?.changeCount == generation)
+        panel.contentView?.layoutSubtreeIfNeeded()
         if let scroll = panel.contentView?.firstPanelScrollView(), let document = scroll.documentView {
             await check("목록이 실제 first responder", panel.makeFirstResponder(scroll) && panel.firstResponder === scroll)
-            await press("\u{F72B}", keyCode: 119)
-            await check("End 마지막 행까지 스크롤", abs(scroll.contentView.bounds.maxY - document.bounds.maxY) <= 1)
-            await press("\u{F729}", keyCode: 115)
-            await check("Home 첫 행까지 스크롤", abs(scroll.contentView.bounds.minY - document.bounds.minY) <= 1)
+            func isAtBoundary(end: Bool) -> Bool {
+                let minimum = document.bounds.minY
+                let maximum = max(minimum, document.bounds.maxY - scroll.contentView.bounds.height)
+                let expected = end == document.isFlipped ? maximum : minimum
+                return abs(scroll.contentView.bounds.minY - expected) <= 1
+            }
+            await press("\u{F72B}", keyCode: 119, in: panel)
+            await check("End 마지막 행까지 스크롤", isAtBoundary(end: true))
+            if !isAtBoundary(end: true) {
+                print("키보드 목록 진단: flipped=\(document.isFlipped) document=\(document.bounds) clip=\(scroll.contentView.bounds) active=\(NSApp.isActive) key=\(panel.isKeyWindow) responder=\(panel.firstResponder === scroll)")
+            }
+            await press("\u{F729}", keyCode: 115, in: panel)
+            await check("Home 첫 행까지 스크롤", isAtBoundary(end: false))
         } else { await check("스크롤 responder", false) }
-        await press("\u{1B}", keyCode: 53)
+        await press("\u{1B}", keyCode: 53, in: panel)
         await check("목록 포커스에서도 Escape 닫기", !panel.isVisible && model.clipboardEnabled
             && smokePasteboard?.changeCount == generation)
         openSettings()
-        try? await Task.sleep(for: .milliseconds(100))
-        await press("1", keyCode: 18, flags: .command)
-        await press("w", keyCode: 13, flags: .command)
+        await press("1", keyCode: 18, flags: .command, in: settingsWindow)
+        await press("w", keyCode: 13, flags: .command, in: panel)
         await check("⌘W 패널 숨기기·변환 유지", !panel.isVisible && model.clipboardEnabled)
         openSettings()
-        try? await Task.sleep(for: .milliseconds(100))
-        await press("1", keyCode: 18, flags: .command)
-        await press(",", keyCode: 43, flags: .command)
+        await press("1", keyCode: 18, flags: .command, in: settingsWindow)
+        await press(",", keyCode: 43, flags: .command, in: panel)
         await check("⌘, 설정 열기", settingsWindow?.isKeyWindow == true && !panel.isVisible)
-        await press("w", keyCode: 13, flags: .command)
+        await press("w", keyCode: 13, flags: .command, in: settingsWindow)
         await check("⌘W 설정 닫기·앱 계속 실행", settingsWindow?.isVisible == false && model.clipboardEnabled)
         openSettings()
-        try? await Task.sleep(for: .milliseconds(100))
+        await press("1", keyCode: 18, flags: .command, in: settingsWindow)
+        await check("상태 메뉴 검사 전 패널 포커스", NSApp.isActive && panel.isVisible && panel.isKeyWindow)
+        let menuOpenCount = statusMenuOpenCount
+        await press("\r", keyCode: 36, flags: .control, in: panel, closeMenu: true)
+        await check("Control+Return 실제 상태 메뉴 열기", statusMenuOpenCount == menuOpenCount + 1)
+        await check("Escape 후 상태 메뉴 닫힘·열림 횟수 유지",
+                    statusItem.menu == nil && statusMenuOpenCount == menuOpenCount + 1)
+        openSettings()
+        await check("키보드 검증 후 설정 포커스 복원", NSApp.isActive && settingsWindow?.isKeyWindow == true)
         return passed
     }
 
