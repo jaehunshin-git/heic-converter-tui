@@ -866,8 +866,11 @@ Python 128개·Swift XCTest 74개·Ruff, 앱/DMG 설치 복사본의 자동 변�
 - 사용자 실기에서 첫 표시·반복 토글·외부 앱 닫힘, 우클릭·Control 클릭 메뉴,
   메뉴의 패널·설정 열기와 ⌘드래그 이동을 정상 확인했다.
 - 상태 아이콘 중 HEIC를 가장 왼쪽으로 옮긴 뒤 Fn+Control+F8의 포커스·패널
-  진입도 확인했다. 패널이 활성화된 상태에서 Control+Return으로 우클릭과 같은
-  메뉴를 여는 명령을 추가했고 사용자 입력과 실제 메뉴 열림 콜백으로 확인했다.
-- Swift XCTest 117개, 일반 LaunchServices 재실행 두 번과 정상 종료, 기존 앱·실제 worker
+  진입도 확인했다. 콜드 스타트에서 Fn+Control+F8 → Control+Return 한 번으로
+  메뉴를 바로 열고 방향키·Return으로 클립보드 패널에 진입하는 사용자 실기를 통과했다.
+  현재 Control 상태를 함께 판정하고 임시 포커스 창의 활성·key 준비 뒤 메뉴를 표시한다.
+- 키보드 smoke는 실제 메뉴 highlight 이동과 Escape 취소·Return 실행을 확인한다.
+  모든 창을 숨기고 Finder로 포커스를 옮긴 내부 API 진입도 임시 창 준비·정리까지 검사한다.
+- Swift XCTest 120개, 일반 LaunchServices 재실행 두 번과 정상 종료, 기존 앱·실제 worker
   smoke를 통과했다. 합성 이벤트와 실제 메뉴바 입력의 범위는 구분한다.
   [재현·수정·검증 기록](macos-issue11-panel-startup.md)을 따른다.
