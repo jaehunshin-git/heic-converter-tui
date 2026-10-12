@@ -613,6 +613,33 @@ final class AutomaticConversionTests: XCTestCase {
         XCTAssertEqual(f.defaults.data(forKey: "converter.settings"), updatedData)
     }
 
+    @MainActor func testResetConversionOptionsPreservesLegacyFieldsAndPausedExecution() throws {
+        for conflict in ["overwrite", "skip"] {
+            var legacy = AppSettings()
+            legacy.clipboardEnabled = false
+            legacy.outputDirectory = "/tmp/heic-legacy-output"
+            legacy.options.outputFormat = "png"
+            legacy.options.jpegQuality = 75
+            legacy.options.pngCompression = 3
+            legacy.options.metadata = "preserve"
+            legacy.options.onConflict = conflict
+            let f = try Fixture(settings: legacy); defer { f.close() }
+            f.model.setClipboard(false)
+            let generation = f.board.changeCount
+
+            f.model.resetConversionOptions()
+
+            var expected = legacy
+            expected.options = ConversionOptions()
+            expected.options.onConflict = conflict
+            XCTAssertEqual(f.model.settings, expected)
+            XCTAssertEqual(AppSettings.load(from: f.defaults), expected)
+            XCTAssertFalse(f.model.clipboardEnabled)
+            XCTAssertEqual(f.board.changeCount, generation)
+            XCTAssertTrue(f.worker.requests.isEmpty)
+        }
+    }
+
     @MainActor func testNewModelStartsEnabledAfterPreviousExecutionWasPaused() throws {
         let f = try Fixture(); defer { f.close() }
         f.model.settings.options.jpegQuality = 75
