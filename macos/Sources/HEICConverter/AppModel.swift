@@ -90,6 +90,13 @@ struct ClipboardConversionNotice: Equatable, Identifiable {
         pollClipboard()
     }
 
+    func resetConversionOptions() {
+        var options = ConversionOptions()
+        // 설정 창에 없는 legacy 충돌 정책은 기본값 복원으로 바꾸지 않는다.
+        options.onConflict = settings.options.onConflict
+        settings.options = options
+    }
+
     func setClipboard(_ enabled: Bool) {
         guard !terminating else { return }
         clipboardEnabled = enabled

@@ -35,7 +35,7 @@ struct SettingsView: View {
                 Text("변경 사항은 자동으로 저장됩니다.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("기본값 복원") { model.settings.options = ConversionOptions() }
+                Button("기본값 복원") { model.resetConversionOptions() }
                     .buttonStyle(.plain)
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
