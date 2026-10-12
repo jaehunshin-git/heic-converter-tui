@@ -20,6 +20,7 @@ final class ClipboardPanel: NSPanel {
     private static var isKeyboardTest: Bool {
         CommandLine.arguments.contains("--keyboard-test") || Bundle.main.object(forInfoDictionaryKey: "HEICKeyboardTest") as? Bool == true
     }
+    private static var isPanelStartupTest: Bool { CommandLine.arguments.contains("--panel-startup-test") }
     private let model: AppModel
     private var statusItem: NSStatusItem!
     private var panel: ClipboardPanel!
@@ -35,9 +36,26 @@ final class ClipboardPanel: NSPanel {
     private var smokePasteboard: NSPasteboard?
     private var smokeDomain: String?
     private var keyboardFixture: URL?
+    private var startupLeftClickCount = 0
+    private lazy var deferredPanelDismissal = FocusDismissalScheduler(
+        shouldWaitForMouseUp: { NSEvent.pressedMouseButtons & 1 != 0 },
+        shouldDismiss: { [weak self] in
+            guard let panel = self?.panel, panel.isVisible else { return false }
+            return !NSApp.isActive || !panel.isKeyWindow
+        },
+        dismiss: { [weak self] in self?.panel.orderOut(nil) })
+
+    private func tracePanel(_ action: String) {
+        guard ProcessInfo.processInfo.environment["HEIC_PANEL_TRACE"] == "1" else { return }
+        let event = NSApp.currentEvent
+        let anchor = anchorGeometry()?.anchor
+        let pointerInside = anchor?.contains(NSEvent.mouseLocation) ?? false
+        print("패널 추적: pid=\(ProcessInfo.processInfo.processIdentifier) time=\(ProcessInfo.processInfo.systemUptime) \(action) event=\(event?.type.rawValue ?? 0) modifiers=\(event?.modifierFlags.rawValue ?? 0) mode=\(RunLoop.current.currentMode?.rawValue ?? "없음") active=\(NSApp.isActive) visible=\(panel?.isVisible ?? false) key=\(panel?.isKeyWindow ?? false) anchor=\(anchor != nil) pressed=\(NSEvent.pressedMouseButtons) pointerInside=\(pointerInside) frontmost=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)")
+        fflush(stdout)
+    }
 
     override init() {
-        if CommandLine.arguments.contains("--smoke-test") || Self.isKeyboardTest {
+        if CommandLine.arguments.contains("--smoke-test") || Self.isKeyboardTest || Self.isPanelStartupTest {
             let name = "heic-panel-smoke-\(UUID().uuidString)"
             let board = NSPasteboard(name: .init(name))
             smokePasteboard = board; smokeDomain = name
@@ -68,7 +86,8 @@ final class ClipboardPanel: NSPanel {
         panel.title = "HEIC Converter"
         panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.ClipboardPanel")
         panel.level = .floating
-        panel.hidesOnDeactivate = true
+        // 포커스 콜백에서 닫는다. 아이콘 mouseDown 때 자동으로 숨기면 mouseUp이 다시 연다.
+        panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
@@ -111,7 +130,11 @@ final class ClipboardPanel: NSPanel {
             }
         }
         // 시작과 복사 감지는 패널을 표시하지 않는다. smoke만 별도 표시 경로를 사용한다.
-        if CommandLine.arguments.contains("--smoke-test") {
+        if Self.isPanelStartupTest {
+            print("시작 패널 검증 PID: \(ProcessInfo.processInfo.processIdentifier)")
+            fflush(stdout)
+            DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
+        } else if CommandLine.arguments.contains("--smoke-test") {
             DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
         } else if Self.isKeyboardTest {
             DispatchQueue.main.async { [self] in waitForSmokeAnchor(until: Date().addingTimeInterval(5)) }
@@ -119,14 +142,19 @@ final class ClipboardPanel: NSPanel {
     }
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        deferredPanelDismissal.cancel()
+        tracePanel("클릭 핸들러")
         let event = NSApp.currentEvent
         // 일반 좌클릭만 패널을 토글한다. 키보드·접근성 활성화와 Control 클릭은 메뉴로 진입한다.
-        if event?.type != .leftMouseUp || event?.modifierFlags.contains(.control) == true {
+        if StatusItemInteraction.opensMenu(for: event) {
             noticeController.dismiss()
             statusItem.menu = makeStatusMenu()
             defer { statusItem.menu = nil }
             sender.performClick(nil)
-        } else { togglePanel() }
+        } else {
+            if Self.isPanelStartupTest { startupLeftClickCount += 1 }
+            togglePanel()
+        }
     }
 
     private func makeStatusMenu() -> NSMenu {
@@ -193,21 +221,27 @@ final class ClipboardPanel: NSPanel {
     }
 
     @objc private func togglePanel() {
+        deferredPanelDismissal.cancel()
         if panel.isVisible { panel.orderOut(nil) }
         else { showPanel() }
     }
 
     @objc private func showPanel() {
+        deferredPanelDismissal.cancel()
+        tracePanel("표시 요청")
         guard anchorGeometry() != nil else { return }
         model.pollClipboard()
         noticeController.dismiss()
         positionPanel()
+        // 처음에는 앱이 비활성 상태이므로 패널을 먼저 화면 앞으로 올린다.
+        panel.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        tracePanel("표시 반환")
     }
 
     private func anchorGeometry() -> (anchor: NSRect, visibleFrame: NSRect)? {
-        guard let button = statusItem.button, let window = button.window else { return nil }
+        guard let button = statusItem?.button, let window = button.window else { return nil }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         guard anchor.width > 0, anchor.height > 0 else { return nil }
         let center = NSPoint(x: anchor.midX, y: anchor.midY)
@@ -271,14 +305,39 @@ final class ClipboardPanel: NSPanel {
         reanchorVisiblePanel()
     }
     func windowDidResignKey(_ notification: Notification) {
+        tracePanel("창 key 상실")
         guard let window = notification.object as? NSWindow, window === panel else { return }
+        guard !isPressingStatusButton else {
+            tracePanel("아이콘 클릭 중 닫기 보류")
+            deferredPanelDismissal.schedule()
+            return
+        }
+        deferredPanelDismissal.cancel()
         panel.orderOut(nil)
     }
     func applicationDidResignActive(_ notification: Notification) {
+        tracePanel("앱 비활성화")
+        guard !isPressingStatusButton else {
+            tracePanel("아이콘 클릭 중 닫기 보류")
+            deferredPanelDismissal.schedule()
+            return
+        }
+        deferredPanelDismissal.cancel()
         // 비활성화 중 임시로 숨긴 패널이 앱 재활성화 때 다시 나타나지 않도록 닫는다.
         panel.orderOut(nil)
     }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
+    private var isPressingStatusButton: Bool {
+        StatusItemInteraction.defersPanelDismissal(buttonFrame: anchorGeometry()?.anchor,
+            mouseLocation: NSEvent.mouseLocation, pressedMouseButtons: NSEvent.pressedMouseButtons,
+            modifiers: NSEvent.modifierFlags)
+    }
+    func applicationDidBecomeActive(_ notification: Notification) { tracePanel("앱 활성화") }
+    func windowDidBecomeKey(_ notification: Notification) { tracePanel("창 key 획득") }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        deferredPanelDismissal.cancel()
+        sender.orderOut(nil)
+        return false
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Finder·Spotlight에서 실행 중인 앱을 다시 열면 마우스 없이 패널로 진입할 수 있다.
@@ -286,19 +345,27 @@ final class ClipboardPanel: NSPanel {
         return false
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        deferredPanelDismissal.cancel()
+        tracePanel("정상 종료 요청")
         noticeController.dismiss()
         model.shutdown { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
         return .terminateLater
     }
     func applicationWillTerminate(_ notification: Notification) {
+        deferredPanelDismissal.cancel()
+        tracePanel("정상 종료 완료")
         noticeController.dismiss()
         model.shutdown()
         NotificationCenter.default.removeObserver(self)
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        smokePasteboard?.releaseGlobally()
+        if let smokeDomain { UserDefaults(suiteName: smokeDomain)?.removePersistentDomain(forName: smokeDomain) }
         if let keyboardFixture {
-            smokePasteboard?.releaseGlobally()
-            if let smokeDomain { UserDefaults(suiteName: smokeDomain)?.removePersistentDomain(forName: smokeDomain) }
             try? FileManager.default.removeItem(at: keyboardFixture)
+        }
+        if Self.isPanelStartupTest {
+            print("시작 패널 검증 [정상 종료 완료]: 성공")
+            fflush(stdout)
         }
     }
 
@@ -325,12 +392,26 @@ final class ClipboardPanel: NSPanel {
 
     private func waitForSmokeAnchor(until deadline: Date) {
         if anchorGeometry() != nil {
-            if Self.isKeyboardTest { prepareKeyboardTest() }
+            if Self.isPanelStartupTest {
+                Task {
+                    guard let button = statusItem.button else { return }
+                    _ = await panelStartupSmokeTest(button: button, panel: panel,
+                        leftClickCount: { [self] in startupLeftClickCount })
+                    // terminateLater의 중첩 루프에서 worker 정리의 main queue 콜백이 실행되게 한다.
+                    // MainActor Task가 반환한 뒤 AppKit run loop에서 정상 종료를 요청한다.
+                    RunLoop.main.perform(inModes: [.default]) { NSApp.terminate(nil) }
+                }
+            } else if Self.isKeyboardTest { prepareKeyboardTest() }
             else { Task { await runPanelSmokeTest() } }
         }
         else if Date() < deadline {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in waitForSmokeAnchor(until: deadline) }
-        } else { print("메뉴 아이콘 배치 시간 초과"); exit(1) }
+        } else {
+            if Self.isPanelStartupTest {
+                print("시작 패널 검증 [메뉴 아이콘 배치 시간 초과]: 실패")
+                RunLoop.main.perform(inModes: [.default]) { NSApp.terminate(nil) }
+            } else { print("메뉴 아이콘 배치 시간 초과"); exit(1) }
+        }
     }
 
     private func runPanelSmokeTest() async {
@@ -479,7 +560,7 @@ final class ClipboardPanel: NSPanel {
         check("감지 시 숨김 유지", !panel.isVisible)
         check("현재 다중 파일 목록", model.clipboardFiles.count == 12)
         togglePanel()
-        check("좌클릭 표시", panel.isVisible)
+        check("패널 토글 호출 표시", panel.isVisible)
         check("파일 목록 콘텐츠 높이", panel.frame.height == fittedPanelHeight(width: panel.frame.width))
         if let geometry = anchorGeometry() {
             check("화면 경계와 돌출부", geometry.visibleFrame.contains(panel.frame)
@@ -530,7 +611,7 @@ final class ClipboardPanel: NSPanel {
         check("표시 중 파일 목록 높이 복원", model.clipboardFiles.count == 12
             && panel.isVisible && panel.frame.height == resizedHeight
             && panel.frame.maxY == populatedFrame.maxY)
-        togglePanel(); check("좌클릭 숨김", !panel.isVisible)
+        togglePanel(); check("패널 토글 호출 숨김", !panel.isVisible)
         let menu = makeStatusMenu()
         check("우클릭 일시정지·패널·설정·종료", menu.items.map(\.title) == ["자동 변환 일시정지", "", "현재 클립보드 보기", "설정 열기…", "", "앱 종료"]
             && menu.items[5].target === NSApp)
