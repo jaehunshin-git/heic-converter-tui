@@ -71,6 +71,8 @@ import sys
 
 subprocess.run([sys.argv[1], "--smoke-test"], check=True, timeout=90)
 PY
+# 일반 LaunchServices 실행 → 실제 상태 버튼 분기 → 정상 종료를 새 프로세스 두 개로 검증한다.
+"$PYTHON" packaging/macos/test_panel_startup.py "$APP"
 STAGING="$BUILD/dmg-root"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
