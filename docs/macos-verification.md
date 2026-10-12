@@ -818,3 +818,43 @@ Python 128개·Swift XCTest 74개·Ruff, 앱/DMG 설치 복사본의 자동 변�
   설정/종료 항목 연결을 검증했다.
 - 최종 소스로 앱·DMG를 다시 빌드해 설치 복사본의 패널·알림·자동 변환 smoke와
   Mach-O 44개·서명·로더·SDR/HDR·SHA-256 검증을 통과했다.
+
+## 2026-10-12: PR #10 기본 키보드 접근성과 이슈 #7 종료 재검토
+
+- 네이티브 앱 메뉴에 `⌘⇧P` 일시정지·재개, `⌘1` 현재 클립보드, `⌘,` 설정,
+  `⌘W` 창 닫기, `⌘Q` 정상 종료를 연결했다. 키보드·접근성 메뉴 아이콘 활성화와
+  Control 클릭은 네이티브 메뉴 경로로 보내며 일반 좌클릭 패널 토글은 유지한다.
+- 실행 중인 앱을 Finder·Spotlight에서 명시적으로 다시 열면 패널을 표시한다.
+  일반 앱 재활성화·복사 감지는 패널을 열지 않고 단축키는 앱에 포커스가 있을 때만 적용한다.
+- `--keyboard-test`와 검증 전용 앱 번들 표시는 일반 클립보드 대신 named pasteboard와
+  별도 UserDefaults, 합성 TXT 12개를 준비한다. 정상 종료 때 전용 보드·설정·파일을 정리한다.
+  실제 사진·카카오톡을 이번 키보드 실기에 사용하지 않았다.
+- 실제 UI 입력에서 `⌘⇧P` 일시정지·재개, `⌘1` 표시, Space 닫기, Escape 닫기,
+  Home/End·Page Down·방향키 스크롤을 확인했다. 스크롤바 값 0→1과 중간값 변경이 근거다.
+- macOS 전체 키보드 접근이 켜져 있었다. Tab으로 JPEG 형식, Right·Space로 PNG 선택,
+  Tab·Right·Space로 PNG 압축 6→3, 정책 Space·Down·Space로 안전 보존→제거,
+  Tab·Space로 기본값 복원, Shift+Tab 역방향 이동과 JPEG 품질 90→80을 확인했다.
+  실제 컨트롤은 키보드로 교체·선택됐고 기본값 복원 뒤 JPEG/90/6/safe로 돌아왔다.
+  테스트는 전용 설정에서 수행했고 시스템 키보드 탐색 설정은 변경하지 않았다.
+- 목록 Tab 포커스 검증에서 기본 NSScrollView가 문서 뷰로 포커스를 넘기는 문제를
+  확인해 목록 자체가 first responder가 되도록 보완했다. 최종 UI에서는 scroll area가
+  포커스되고 파란 경계가 표시됐으며 End로 10~12번 마지막 행이 보였다. Shift+Tab은
+  닫기 버튼으로 돌아왔다. 패널 `⌘W`와 정상 종료 `⌘Q`도 실제 UI 입력으로 확인했다.
+- 최종 릴리스 바이너리를 쓰는 검증 전용 번들에서 Escape로 패널을 닫은 뒤
+  Finder의 앱 선택과 `⌘O`로 다시 열어 패널에 진입했다. 마우스 없는 명시적 재열기 경로다.
+- 앱 smoke는 `performActionForItem`과 별개로 `NSApp.postEvent`를 통해 키 이벤트를 큐에
+  넣어 네이티브 key-equivalent와 responder chain을 검사한다. `⌘1` 두 번에도 열린 상태 유지,
+  `⌘⇧P` 일시정지·재개와 세대 보존, End/Home, 목록 포커스 Escape 후 활성 유지,
+  `⌘,` 설정, 패널·설정 `⌘W` 닫기를 모두 통과했다. 목록이 실제 first responder인지도
+  확인하고 상태 검사는 최대 2초 동안 기다린다. 처음 합성 이벤트의 대문자
+  `charactersIgnoringModifiers` 때문에 pause 검사가 실패했으며, 실제 키 입력은 통과했다.
+  수정 키를 제거한 소문자 값으로 합성 이벤트를 바로잡은 뒤 전체 smoke와 빌드가 통과했다.
+- 스크롤 좌표계 두 종류·상하 경계·수정 키 및 Tab/Escape/Space/Return 미소비 회귀 2개를
+  추가했다. Swift Kit 76+모델 27+worker 3+키보드 2=108개, Python pytest 163개,
+  Ruff와 앱·DMG·arm64 서명/로더·설치 복사본 worker/앱 검증이 통과했다.
+- Control+F8/Fn+Control+F8의 모든 OS 상태 메뉴 경로나 VoiceOver 낭독까지 확인하지 않았다.
+  UI 도구에는 Fn 입력이 없었다. Finder 재열기라는 실제 키보드 진입과 앱 내부 기본 동작을
+  확인했으며 읽기 전용 행마다 Tab 포커스나 전역 단축키를 새 종료 요건으로 추가하지 않는다.
+- #7 체크리스트 16번의 기본 접근성 공백은 해소했다. 전체 판정은
+  [변경 계약과 종료 조건 감사](macos-issue7-scope-audit.md)를 따르며 최신 PR head의
+  macOS 15/26 필수 검사가 통과하면 PR 머지와 함께 이슈를 종료할 수 있다.

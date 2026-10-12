@@ -103,6 +103,14 @@ Completion notices close after four seconds; failures close after six seconds.
 Click a notice to open the current clipboard panel, or dismiss it with its close button.
 The notice height fits its text and progress bar automatically.
 
+Keyboard access is available while the app has focus: Command-Shift-P pauses/resumes,
+Command-1 shows the current clipboard, Command-comma opens Settings, Command-W closes
+the current window, and Command-Q quits. Escape hides the panel. Use Tab/Shift-Tab
+and Space to navigate and activate settings controls with macOS keyboard navigation
+or Full Keyboard Access enabled. Arrow keys, Page Up/Down, and Home/End scroll the
+read-only file list. Reopen the running app from Finder or Spotlight to show the
+panel without clicking its status icon; these shortcuts are not global.
+
 Automatic conversion starts enabled on every launch. Pause applies only to the
 current session; the next launch starts enabled even if an older configuration
 saved the feature as disabled. Conversion options still persist. A paused menu bar
