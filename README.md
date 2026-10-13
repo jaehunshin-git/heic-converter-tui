@@ -72,7 +72,7 @@ bash packaging/macos/build.sh
 
 The current source builds `dist/macos/heiccy.app`,
 `dist/macos/heiccy-0.3.0-arm64.dmg`, and the matching `.sha256` file.
-See [the build and release guide](docs/macos-build-release.md)
+See [the build and release guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)
 for the pinned build environment and validation steps.
 
 ## Using heiccy
@@ -113,8 +113,8 @@ JPEG output is SDR. HDR conversion depends on the source and ImageIO support.
 - Receiving apps choose which clipboard representations to accept; pasting every
   item in every app is not guaranteed.
 
-See [the clipboard behavior and support contract](docs/macos-auto-clipboard.md)
-and [compatibility validation records](docs/macos-issue7-remaining-validation.md)
+See [the clipboard behavior and support contract](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)
+and [compatibility validation records](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)
 for detailed behavior and observed receiving-app limitations.
 
 ## CLI/TUI
@@ -366,11 +366,11 @@ heic-converter-tui/
 
 | Document | Contents |
 | --- | --- |
-| [Build and release guide](docs/macos-build-release.md) | Build environment, app/DMG validation, and release procedure. |
-| [Clipboard contract](docs/macos-auto-clipboard.md) | Supported input, publication, cancellation, and cleanup behavior. |
-| [Keyboard access verification](docs/macos-issue11-panel-startup.md) | Cold-start menu access and keyboard validation records. |
-| [PR #9 validation record](docs/macos-issue7-pr-readiness.md) | Historical clipboard and receiving-app checks. |
-| [Issue #7 scope audit](docs/macos-issue7-scope-audit.md) | Requirement changes, verification boundaries, and remaining work. |
+| [Build and release guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md) | Build environment, app/DMG validation, and release procedure. |
+| [Clipboard contract](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md) | Supported input, publication, cancellation, and cleanup behavior. |
+| [Keyboard access verification](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue11-panel-startup.md) | Cold-start menu access and keyboard validation records. |
+| [PR #9 validation record](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md) | Historical clipboard and receiving-app checks. |
+| [Issue #7 scope audit](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md) | Requirement changes, verification boundaries, and remaining work. |
 | [Branding](docs/macos-branding.md) | Approved name, assets, compatibility decisions, and verification records. |
 | [Brand assets](docs/assets/branding/DESIGN.md) | Logo, app icon, and menu bar symbol specifications. |
 
