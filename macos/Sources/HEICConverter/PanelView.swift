@@ -69,18 +69,13 @@ struct PanelView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            PhotoClipboardIconShape().fill(Color(white: contrast == .increased ? 0.25 : 0.40))
+        HStack(alignment: .center, spacing: 12) {
+            PhotoClipboardIconShape().fill(.black)
                 .frame(width: 22, height: 24)
                 .frame(width: 34, height: 34)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color(white: contrast == .increased ? 0.60 : 0.90), lineWidth: 0.75)
-                        .allowsHitTesting(false)
-                }
                 .accessibilityHidden(true)
-            Text("HEIC Converter").font(.title3.bold())
+            HeiccyWordmark()
             Spacer(minLength: 4)
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).frame(width: 32, height: 32)

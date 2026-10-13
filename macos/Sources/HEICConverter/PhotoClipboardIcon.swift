@@ -1,29 +1,41 @@
 import AppKit
 import SwiftUI
 
-/// 왼쪽 위를 원점으로 사용하는 공통 벡터 기하.
+/// 확정 heiccy SVG와 같은, 왼쪽 위를 원점으로 하는 공통 벡터 기하.
+/// 규격과 원본은 docs/assets/branding/DESIGN.md에 기록한다.
 enum PhotoClipboardIconGeometry {
     static let menuBarSize = CGSize(width: 16.2, height: 18)
-    static let accessibilityDescription = "사진 클립보드 — HEIC Converter"
+    static let accessibilityDescription = "클립보드 심볼 — heiccy"
+    static let pausedAccessibilityDescription = "heiccy — 자동 변환 일시정지됨"
+    static let clipboardWidth: CGFloat = 13.25
+    static let strokeWidth: CGFloat = 1.30
+    static let eyeRadius: CGFloat = 0.72
 
-    /// 기본 18×20pt에서 1.4pt이며, 작은 크기에서도 최소 1.3pt를 유지한다.
     static func lineWidth(in size: CGSize) -> CGFloat {
-        max(1.3, 1.4 * min(size.width / 18, size.height / 20))
+        strokeWidth * max(0, min(size.width / 18, size.height / 20))
     }
 
-    /// 외곽과 집게를 이어 그려 중첩 선 없이 하나의 클립보드로 읽히게 한다.
-    /// 산과 해도 같은 경로에 포함하며, 별도의 사진 테두리는 두지 않는다.
-    static func centerline(in rect: CGRect) -> CGPath {
+    private static func transform(in rect: CGRect) -> CGAffineTransform {
+        let scale = max(0, min(rect.width / 18, rect.height / 20))
+        return CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
+                                tx: rect.midX - 9 * scale,
+                                ty: rect.midY - 10 * scale)
+    }
+
+    /// 브랜드 원본의 외곽·집게를 유지하고 얼굴은 출력 용도에 맞춰 따로 그린다.
+    private static func clipboardCenterline(in rect: CGRect) -> CGPath {
         let path = CGMutablePath()
+        let left = 9 - clipboardWidth / 2
+        let right = 9 + clipboardWidth / 2
         path.move(to: CGPoint(x: 6, y: 3.5))
-        path.addLine(to: CGPoint(x: 4, y: 3.5))
-        path.addQuadCurve(to: CGPoint(x: 2, y: 5.5), control: CGPoint(x: 2, y: 3.5))
-        path.addLine(to: CGPoint(x: 2, y: 16.75))
-        path.addQuadCurve(to: CGPoint(x: 4, y: 18.75), control: CGPoint(x: 2, y: 18.75))
-        path.addLine(to: CGPoint(x: 14, y: 18.75))
-        path.addQuadCurve(to: CGPoint(x: 16, y: 16.75), control: CGPoint(x: 16, y: 18.75))
-        path.addLine(to: CGPoint(x: 16, y: 5.5))
-        path.addQuadCurve(to: CGPoint(x: 14, y: 3.5), control: CGPoint(x: 16, y: 3.5))
+        path.addLine(to: CGPoint(x: left + 2, y: 3.5))
+        path.addQuadCurve(to: CGPoint(x: left, y: 5.5), control: CGPoint(x: left, y: 3.5))
+        path.addLine(to: CGPoint(x: left, y: 16.75))
+        path.addQuadCurve(to: CGPoint(x: left + 2, y: 18.75), control: CGPoint(x: left, y: 18.75))
+        path.addLine(to: CGPoint(x: right - 2, y: 18.75))
+        path.addQuadCurve(to: CGPoint(x: right, y: 16.75), control: CGPoint(x: right, y: 18.75))
+        path.addLine(to: CGPoint(x: right, y: 5.5))
+        path.addQuadCurve(to: CGPoint(x: right - 2, y: 3.5), control: CGPoint(x: right, y: 3.5))
         path.addLine(to: CGPoint(x: 12, y: 3.5))
         path.addLine(to: CGPoint(x: 12, y: 2.25))
         path.addQuadCurve(to: CGPoint(x: 11, y: 1.25), control: CGPoint(x: 12, y: 1.25))
@@ -38,43 +50,59 @@ enum PhotoClipboardIconGeometry {
         path.addQuadCurve(to: CGPoint(x: 12, y: 4.25), control: CGPoint(x: 12, y: 5.25))
         path.addLine(to: CGPoint(x: 12, y: 3.5))
 
-        path.move(to: CGPoint(x: 5, y: 15))
-        path.addLine(to: CGPoint(x: 8, y: 10.75))
-        path.addLine(to: CGPoint(x: 10.75, y: 14))
-        path.addLine(to: CGPoint(x: 12.5, y: 12))
-        path.addLine(to: CGPoint(x: 13.5, y: 15))
-        // 16pt·1x에서도 해의 빈 중심이 선에 묻히지 않도록 지름을 확보한다.
-        path.addEllipse(in: CGRect(x: 10.4, y: 7, width: 3, height: 3))
-
-        let scale = max(0, min(rect.width / 18, rect.height / 20))
-        var transform = CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
-                                         tx: rect.midX - 9 * scale,
-                                         ty: rect.midY - 10 * scale)
-        return path.copy(using: &transform)!
+        var placement = transform(in: rect)
+        return path.copy(using: &placement)!
     }
 
-    /// 실제 출력 크기에서 선을 면으로 변환하여 SwiftUI와 AppKit이 공유한다.
-    static func silhouette(in rect: CGRect) -> CGPath {
-        guard rect.width > 0, rect.height > 0 else { return CGMutablePath() }
-        return centerline(in: rect).copy(strokingWithWidth: lineWidth(in: rect.size),
-                                        lineCap: .round, lineJoin: .round, miterLimit: 2)
+    private static func smileCenterline(in rect: CGRect, forMenuBar: Bool) -> CGPath {
+        let path = CGMutablePath()
+        if forMenuBar {
+            path.move(to: CGPoint(x: 7, y: 13.1))
+            path.addQuadCurve(to: CGPoint(x: 11, y: 13.1), control: CGPoint(x: 9, y: 15.2))
+        } else {
+            path.move(to: CGPoint(x: 7.85, y: 12.4))
+            path.addQuadCurve(to: CGPoint(x: 10.15, y: 12.4), control: CGPoint(x: 9, y: 13.55))
+        }
+        var placement = transform(in: rect)
+        return path.copy(using: &placement)!
     }
 
-    /// 벡터 그리기 핸들러는 화면 배율마다 다시 그려져 1x·2x에서 선명하다.
+    /// 메뉴바에서는 눈과 미소를 키워 1x·2x에서도 세 부분이 분리되도록 한다.
+    /// 패널과 큰 로고는 확정된 원본 얼굴을 그대로 사용한다.
+    static func silhouette(in rect: CGRect, forMenuBar: Bool = false) -> CGPath {
+        let silhouette = CGMutablePath()
+        guard rect.width > 0, rect.height > 0 else { return silhouette }
+        let scale = min(rect.width / 18, rect.height / 20)
+        silhouette.addPath(clipboardCenterline(in: rect).copy(strokingWithWidth: lineWidth(in: rect.size),
+                                                             lineCap: .round, lineJoin: .round, miterLimit: 2))
+        silhouette.addPath(smileCenterline(in: rect, forMenuBar: forMenuBar)
+            .copy(strokingWithWidth: (forMenuBar ? 1.50 : strokeWidth) * scale,
+                  lineCap: .round, lineJoin: .round, miterLimit: 2))
+        let eyes = CGMutablePath()
+        let radius: CGFloat = forMenuBar ? 1.10 : eyeRadius
+        let eyeY: CGFloat = forMenuBar ? 10.2 : 10.9
+        for x: CGFloat in [6.25, 11.75] {
+            eyes.addEllipse(in: CGRect(x: x - radius, y: eyeY - radius,
+                                      width: radius * 2, height: radius * 2))
+        }
+        silhouette.addPath(eyes, transform: transform(in: rect))
+        return silhouette
+    }
+
+    /// 시스템이 template 이미지의 색을 조절하며, 1x·2x 배율에서 벡터로 그린다.
     static func makeTemplateImage(size: CGSize = menuBarSize, isPaused: Bool = false) -> NSImage {
         let image = NSImage(size: size, flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.setAllowsAntialiasing(true)
             context.setShouldAntialias(true)
             context.setFillColor(NSColor.black.withAlphaComponent(isPaused ? 0.55 : 1).cgColor)
-            context.addPath(silhouette(in: rect))
+            context.addPath(silhouette(in: rect, forMenuBar: true))
             context.fillPath()
             if isPaused {
-                let scale = min(rect.width / 18, rect.height / 20)
+                let placement = transform(in: rect)
                 context.saveGState()
-                context.translateBy(x: rect.midX - 9 * scale, y: rect.midY - 10 * scale)
-                context.scaleBy(x: scale, y: scale)
-                // 옅은 클립보드와 진한 일시정지 기호로 색상에만 의존하지 않고 상태를 알린다.
+                context.concatenate(placement)
+                // 옅은 심볼과 진한 일시정지 기호로 상태를 구분한다.
                 context.setBlendMode(.clear)
                 context.fillEllipse(in: CGRect(x: 9.5, y: 11.5, width: 8, height: 8))
                 context.setBlendMode(.normal)
@@ -86,19 +114,18 @@ enum PhotoClipboardIconGeometry {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = isPaused ? "HEIC Converter — 자동 변환 일시정지됨" : accessibilityDescription
+        image.accessibilityDescription = isPaused ? pausedAccessibilityDescription : accessibilityDescription
         return image
     }
 }
 
-/// `.fill(.primary)` 등으로 패널의 색상을 직접 지정할 수 있는 공통 도형.
+/// 패널에서 사용할 때 크기와 색상만 지정하는 공통 심볼.
 struct PhotoClipboardIconShape: Shape {
     func path(in rect: CGRect) -> Path {
         Path(PhotoClipboardIconGeometry.silhouette(in: rect))
     }
 }
 
-/// 패널 헤더에서 `.frame(width: 22, height: 24)`로 사용한다.
 struct PhotoClipboardIcon: View {
     var body: some View {
         PhotoClipboardIconShape()

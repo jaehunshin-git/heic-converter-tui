@@ -14,7 +14,7 @@ struct ClipboardNoticeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("HEIC Converter").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Text("heiccy").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
                 Button(action: onDismiss) {
