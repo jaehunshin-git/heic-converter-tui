@@ -69,11 +69,22 @@ DMG 볼륨 이름은 `heiccy`이며, `heiccy.app` 하나와 `/Applications` 바�
 반복한다. 마운트는 검증 후 해제하고 체크섬을 확인한다.
 
 DMG 생성은 OS 버전·빌드 번호·아키텍처와 `hdiutil create -verbose` 출력을
-기록한다. 검증은 파일 경로·크기·예상/실제 SHA-256을 먼저 기록한 뒤
+기록한다. `create_dmg.py`는 각 시도의 명령·종료 코드·stdout·stderr를 보존하고,
+최종 실패 진단이 `hdiutil: create failed - Resource busy`인 경우에만 2초 간격으로
+최대 총 3회 시도한다. 실패한 명령에 지정한 불완전한 DMG 파일만 정리하며 다른 오류와
+시도별 300초 타임아웃은 즉시 중단한다. 재시도 한도를 소진하면 빌드도 실패한다.
+새 생성 전에 이전 체크섬을 제거하고 생성 성공 후에만 새 체크섬·설치 검증을 진행한다.
+검증은 파일 경로·크기·예상/실제 SHA-256을 먼저 기록한 뒤
 `hdiutil verify -verbose`로 이미지 내부 체크섬을 검사한다. verify·attach·detach의
 명령, 종료 코드, stdout과 stderr를 로그에 남기며 attach의 원본 stdout은
 별도로 plist 파싱에 사용한다. 외부 체크섬이나 hdiutil 검증 실패 시 즉시 중단하며
 자동 재시도하거나 설치 검증으로 우회하지 않는다.
+
+2026-10-13 KST의 [PR #17 실행 38367295201](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38367295201)은
+macOS 15.7.9에서 앱·worker·시작 패널 검증 후 `hdiutil create`의 복사 완료·마무리
+단계에서 `Resource busy`로 실패했다. macOS 26 작업은 통과했다. 배타적 접근 실패를
+일으킨 프로세스는 해당 로그로 특정할 수 없으므로 원인을 단정하거나 검증을 생략하지 않는다.
+위 재시도는 생성 단계의 해당 오류에 한정하며 verify·attach·설치 검증의 실패는 그대로 유지한다.
 
 2026-10-07 KST의 [push 실행 37491932847](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/37491932847)은
 macOS 26의 `hdiutil verify -quiet`에서 exit 1로 실패했다. 같은 HEAD
