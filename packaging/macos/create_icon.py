@@ -1,46 +1,47 @@
-"""외부 이미지 없이 앱 아이콘 크기별 PNG를 생성합니다."""
+"""확정된 앱 아이콘 PNG에서 ICNS용 크기별 이미지를 생성합니다."""
 
+import argparse
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
+
+SOURCE = (
+    Path(__file__).resolve().parents[2] / "docs/assets/branding/heiccy-app-icon.png"
+)
 
 
-def main() -> None:
-    import sys
+def create_iconset(source: Path, destination: Path) -> None:
+    if not source.is_file():
+        raise FileNotFoundError(f"앱 아이콘 원본 PNG가 없습니다: {source}")
+    with Image.open(source) as image:
+        if image.format != "PNG":
+            raise ValueError(f"앱 아이콘 원본은 PNG여야 합니다: {source}")
+        if image.size != (1024, 1024) or image.mode != "RGBA":
+            raise ValueError(
+                "앱 아이콘 원본은 1024×1024 RGBA PNG여야 합니다: "
+                f"{source} ({image.width}×{image.height}, {image.mode})"
+            )
+        image.load()
+        destination.mkdir(parents=True, exist_ok=True)
+        for size in (16, 32, 128, 256, 512):
+            for scale in (1, 2):
+                pixels = size * scale
+                suffix = "@2x" if scale == 2 else ""
+                resized = image.resize((pixels, pixels), Image.Resampling.LANCZOS)
+                resized.save(destination / f"icon_{size}x{size}{suffix}.png")
 
-    destination = Path(sys.argv[1])
-    destination.mkdir(parents=True, exist_ok=True)
-    for size in (16, 32, 128, 256, 512):
-        for scale in (1, 2):
-            pixels = size * scale
-            canvas = Image.new("RGBA", (pixels, pixels))
-            draw = ImageDraw.Draw(canvas)
-            draw.rounded_rectangle(
-                (0, 0, pixels - 1, pixels - 1),
-                radius=pixels * 0.22,
-                fill="#245bd1",
-            )
-            draw.rounded_rectangle(
-                (pixels * 0.19, pixels * 0.22, pixels * 0.81, pixels * 0.76),
-                radius=pixels * 0.07,
-                fill="#ffffff",
-            )
-            draw.ellipse(
-                (pixels * 0.59, pixels * 0.30, pixels * 0.71, pixels * 0.42),
-                fill="#f2b84b",
-            )
-            draw.polygon(
-                [
-                    (pixels * 0.26, pixels * 0.66),
-                    (pixels * 0.43, pixels * 0.43),
-                    (pixels * 0.57, pixels * 0.60),
-                    (pixels * 0.66, pixels * 0.50),
-                    (pixels * 0.76, pixels * 0.66),
-                ],
-                fill="#245bd1",
-            )
-            suffix = "@2x" if scale == 2 else ""
-            canvas.save(destination / f"icon_{size}x{size}{suffix}.png")
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("destination", type=Path, help="ICNS용 iconset 저장 경로")
+    parser.add_argument(
+        "--source", type=Path, default=SOURCE, help="1024×1024 RGBA 앱 아이콘 PNG"
+    )
+    args = parser.parse_args(argv)
+    try:
+        create_iconset(args.source, args.destination)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":
