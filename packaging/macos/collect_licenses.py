@@ -62,14 +62,14 @@ def corrected_bundled_notice(contents: str, version: str, info: dict) -> str:
         raise RuntimeError("고정 wheel의 upstream libaom 고지 형식이 변경되었습니다.")
     contents = contents.split("\nName: libaom\n", maxsplit=1)[0].rstrip() + "\n"
     return (
-        "HEIC Converter: pillow-heif 1.1.1의 실제 코덱 버전과 공식 소스에 맞게\n"
+        "heiccy: pillow-heif 1.1.1의 실제 코덱 버전과 공식 소스에 맞게\n"
         "upstream LICENSES_bundled.txt의 버전·소스 링크를 보정했습니다.\n\n" + contents
     )
 
 
 def main() -> None:
     destination = Path(sys.argv[1])
-    notices = ["HEIC Converter 내장 런타임 및 제3자 라이선스 고지\n"]
+    notices = ["heiccy 내장 런타임 및 제3자 라이선스 고지\n"]
     for name in RUNTIME_DISTRIBUTIONS:
         package = importlib.metadata.distribution(name)
         notices.append(f"{package.metadata['Name']} {package.version}\n")

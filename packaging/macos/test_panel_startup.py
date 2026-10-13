@@ -1,6 +1,6 @@
 """일반 LaunchServices 실행 두 번의 패널 검사와 정상 종료를 확인한다.
 
-사용법: python3 packaging/macos/test_panel_startup.py '/경로/HEIC Converter.app'
+사용법: python3 packaging/macos/test_panel_startup.py '/경로/heiccy.app'
 Python 표준 라이브러리와 macOS 기본 open·ps만 사용한다. 프로세스 조회는
 CFBundleExecutable과 실행파일명을 정확히 비교하고 zombie를 제외한다.
 다른 번들이어도 실행파일명이 같으면 보수적으로 차단하며 기존 앱을 조작하지 않는다.

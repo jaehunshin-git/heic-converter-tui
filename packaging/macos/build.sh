@@ -11,7 +11,7 @@ export MACOSX_DEPLOYMENT_TARGET=15.0
 PYTHON_VERSION=3.12.12
 BUILD="$ROOT/build/macos"
 DIST="$ROOT/dist/macos"
-APP="$DIST/HEIC Converter.app"
+APP="$DIST/heiccy.app"
 ENVIRONMENT="$ROOT/.venv-app-build"
 # 상위 링크를 따라 저장소 밖의 산출물을 지우거나 덮어쓰지 않는다.
 for directory in "$ROOT/build" "$BUILD" "$ROOT/dist" "$DIST" "$ENVIRONMENT"; do
@@ -76,14 +76,14 @@ PY
 STAGING="$BUILD/dmg-root"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
-cp -R "$APP" "$STAGING/HEIC Converter.app"
+cp -R "$APP" "$STAGING/$(basename "$APP")"
 ln -s /Applications "$STAGING/Applications"
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/macos/Info.plist)"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "잘못된 앱 버전: $APP_VERSION" >&2
     exit 1
 fi
-DMG="$DIST/HEIC-Converter-$APP_VERSION-arm64.dmg"
+DMG="$DIST/heiccy-$APP_VERSION-arm64.dmg"
 rm -f "$DMG"
 echo 'DMG 생성 환경:'
 sw_vers
@@ -94,7 +94,7 @@ import subprocess
 import sys
 
 subprocess.run(
-    ["hdiutil", "create", "-verbose", "-volname", "HEIC Converter",
+    ["hdiutil", "create", "-verbose", "-volname", "heiccy",
      "-srcfolder", sys.argv[1], "-fs", "HFS+", "-format", "UDZO", sys.argv[2]],
     check=True, timeout=300,
 )

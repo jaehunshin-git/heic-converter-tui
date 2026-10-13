@@ -248,10 +248,13 @@ def test_full_build_prepares_gui_and_creates_hfs_dmg(macos_build, dmg_status):
     commands = log.read_text()
     assert commands.index("Finder ready") < commands.index("app smoke --smoke-test")
     assert "-fs HFS+ -format UDZO" in commands
-    checksum = root / "dist/macos/HEIC-Converter-0.3.0-arm64.dmg.sha256"
+    checksum = root / "dist/macos/heiccy-0.3.0-arm64.dmg.sha256"
     # 성공 fixture에서는 실제 hdiutil 대신 빈 이미지를 해시한다.
     if dmg_status == 0:
         assert "packaging/macos/validate_dmg.py" in commands
+        assert (root / "dist/macos/heiccy.app").is_dir()
+        assert (root / "build/macos/dmg-root/heiccy.app").is_dir()
+        assert "-volname heiccy" in commands
         assert checksum.exists()
     else:
         assert "packaging/macos/validate_dmg.py" not in commands
