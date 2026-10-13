@@ -23,16 +23,23 @@
 | #13 범위 | 확인한 결과 | 남은 범위 |
 | --- | --- | --- |
 | 채널·저장소·이전 정책 | GitHub Releases, 공개 `heiccy`, 별도 소스 이력, 독립 PyPI 운영 확정 | 없음 |
-| 소스·라이선스 이전 | 공개 소스·영문 LICENSE·한국어 이용 조건·제3자 고지·대응 소스 수집 구현. 내부 workflow·사진·개발 문서 제외 | 새 문서 변경의 공개 소스 동기화 결과는 PR에서 기록 |
+| 소스·라이선스 이전 | 공개 소스·영문 LICENSE·한국어 이용 조건·제3자 고지·대응 소스 수집 구현. 내부 workflow·사진·개발 문서 제외. 공개 사본 테스트 433건·131개 파일 해시·상대 링크 21개 확인 | 최종 출처 SHA 동기화 결과는 PR에서 기록 |
 | 버전·메뉴·아이콘·설정 | 앱 1.0.0·Python 0.3.0, #5 실기 범위, CI 설치본의 실제 변환·Applications 교체·설정 승계 확인 | 이번 CI 설치본 자체의 메뉴바 좌·우 클릭은 미검증. 기존 빌드 사용자 확인과 구분 |
 | CI와 수동 게시 | macOS 15·26 검증, macOS 15 원본 선택, manifest·SHA 검사, main 포함·태그 검사 구현. 수동 CLI 절차 작성, 자동 게시 비활성 | main 머지 후 실제 태그 실행·CLI 초안 생성과 공개 게시 미검증 |
 | README·첫 실행·릴리스 노트 | 영어·한국어 앱 안내, macOS 15+ arm64, ad-hoc·미공증·업데이트 안내 작성 | 공개 릴리스 다운로드와 Gatekeeper 차단·허용 실기 미검증 |
 | 공개 URL·기존 CLI | 새 안내·메타데이터의 공개 URL, 기존 로컬 origin·CLI 이름 유지 | 이미 게시된 PyPI 0.2.8의 이전 URL은 다음 독립 Python 릴리스 전까지 유지 |
 | PyPI 설명·배포 파일 | 영어 README.pypi.md 분리, wheel METADATA·sdist PKG-INFO 0.3.0과 포함 목록 검사 통과 | 새 Python 버전의 PyPI 업로드는 이번 앱 작업과 별도 |
 | 다운로드·설치·업그레이드 | 인증된 CI artifact의 SHA·/Applications 설치·실행·Finder 실제 변환·구 앱 교체·재실행 통과 | 비인증 공개 DMG 다운로드와 브라우저 격리 속성을 포함한 첫 실행은 게시 전으로 미검증 |
-| Private 전환 | Free 제약 수용·설정 백업·Private 전환 완료. 비인증 개발 코드·이슈·PR HTTP 404, 공개 소스 HTTP 200 | 전환 후 최신 통합 커밋의 macOS 15·26 CI와 공개 DMG 경로 검증 예정 |
+| Private 전환 | Free 제약 수용·설정 백업·Private 전환 완료. 비인증 개발 코드·이슈·PR HTTP 404, 공개 소스 HTTP 200. 전환 후 PR·push의 macOS 15·26 CI 성공 | 공개 DMG 경로는 main 머지·수동 게시 후 검증 |
 
 ## CI 산출물의 출처와 자동 검사
+
+Private 전환 후 main의 PR #17과 충돌 정리를 포함한 커밋
+`86bda5c7517c66770c70bbebae53bc1669ccfa72`에서
+[PR CI 38382488358](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38382488358)와
+[push CI 38382483705](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38382483705)의
+macOS 15·26이 모두 성공했다. 자동 게시 job은 skipped였고 태그·릴리스는 생성하지 않았다.
+아래 설치 실기에는 이전 CI 앱을 사용했으며 이 새 실행의 설치 실기로 바꾸지 않는다.
 
 [PR CI 실행 38372615579](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38372615579)와
 [push CI 실행 38372608171](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38372608171)은
@@ -106,9 +113,15 @@ GitHub Free에서는 Private 저장소의 보호 규칙과 environment를 현재
 API의 private=true·visibility=private와 공개 저장소의 private=false를 확인했다.
 Authorization 헤더 없는 요청에서 개발 저장소·이슈 #13·PR #16·raw README·저장소
 API가 모두 HTTP 404였고, 공개 저장소·raw README·SOURCE.json은 HTTP 200이었다.
-Private 전환 후 CI 성공과 공개 DMG 다운로드는 각각 검증한 뒤 기록한다.
+Private 전환 후 두 OS CI는 위 통합 커밋에서 성공했다. 공개 DMG 다운로드는 미검증이다.
 근거와 수동 배포 순서는 [운영 문서](macos-build-release.md)와
 [수동 릴리스 절차](macos-manual-release.md)에 기록한다.
+
+공개 커밋 `a2307b268ad8dba2fd121827c8af70895190f292`은 개발 통합 커밋 `86bda5c`에
+대응한다. 비인증 codeload ZIP HTTP 200에서 131개 파일 해시가 SOURCE.json과 모두
+일치했고 공개 문서의 상대 링크 21개를 확인했다. 독립 공개 사본의 Python 테스트
+433건이 통과했다. 공개 훅 5개 경로를 정확히 허용하며 다른 scripts·숨김 파일은
+추가 허용하지 않는다. 후속 내부 문서 커밋의 출처 동기화는 PR에 기록한다.
 
 ## 앞선 검증 이력
 
