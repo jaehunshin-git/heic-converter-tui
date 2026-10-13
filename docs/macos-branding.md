@@ -313,14 +313,10 @@ PR #14는 main에 병합되었지만, 이슈 #5의 실제 메뉴바·업그레�
 변하지 않는 것을 확인했고, 격리 도메인은 검사 후 정리했다. 실제 사용자 도메인도
 조사 전후 동일했으며 개인 설정값·경로는 문서에 공개하지 않는다.
 
-21개 테스트의 재현 필터는 다음과 같다. 이 건수에는 앞서 별도 확인한 아이콘 3개가
-포함되며 합산하지 않는다. 격리 업그레이드 검사는 자동 테스트 건수에 포함하지 않는다.
-
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  swift test --package-path macos --filter \
-  'FeedbackSettingsTests|QualityPresetTests|ConverterKitTests.testSettingsPersistWithoutQueueHistory|HeiccyIconTests|AutomaticConversionTests.test(LegacyDisabledSettingIsIgnoredAndConversionOptionsArePreserved|ResetConversionOptionsPreservesLegacyFieldsAndPausedExecution|NewModelStartsEnabledAfterPreviousExecutionWasPaused|PauseDoesNotPersistAndResumeProcessesCurrentHEIC)'
-```
+21개 테스트는 `FeedbackSettingsTests`, `QualityPresetTests`, 설정 영속화 검사,
+`HeiccyIconTests`와 자동 변환 모델의 legacy 옵션·기본값 복원·일시정지·재실행 검사다.
+이 건수에는 앞서 별도 확인한 아이콘 3개가 포함되며 합산하지 않는다.
+격리 업그레이드 검사는 자동 테스트 건수에 포함하지 않는다.
 
 legacy `clipboardEnabled` 필드는 보존하지만 실행 중 자동 변환은 시작할 때 활성화된다.
 이는 브랜딩 이전부터 유지한 정책이다. 이번에는 임시 설치 경로에서 실제 앱으로 다음 절차를 추가 수행했다.
@@ -377,7 +373,7 @@ AX 트리·VoiceOver 발화, 1x 실제 디스플레이는 확인하지 않았으
 
 #13은 독립 범위인 공개 배포·다운로드·설치 및 Private 전환 후 재검증이 남아 있다.
 자동 배포는 `HEICCY_RELEASE_ENABLED=false`로 보류하며 `Refs #13`을 유지한다.
-이번 브랜딩 검증은 #13의 정식 배포나 #5 전체 완료를 의미하지 않는다.
+이번 브랜딩 검증으로 #5의 완료 연결을 준비했으며, #13의 정식 배포를 완료한 것은 아니다.
 
 ## 기록 방식
 
