@@ -1,183 +1,132 @@
-# HEIC Converter
+<img src="docs/assets/branding/heiccy-app-icon.png" alt="heiccy 앱 아이콘" width="96" height="96" />
 
-[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
-[![다운로드](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
-[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![라이선스](https://img.shields.io/badge/License-MIT-yellow)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/LICENSE)
-![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
+# heiccy
+
+![macOS](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)
+![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555)
 ![로컬 처리](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
+[![라이선스](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-> 메뉴 막대에서 변환하고, 방향키로 설정하고, 명령어로 자동화하는 HEIC 변환기
+> HEIC를 JPEG·PNG로, 알아서.
+>
+> 변환은 헤이키에게.
 
-`heic-converter-tui`는 디렉터리의 `.heic` 사진을 JPEG 또는 PNG로 변환하는
-Python 3.11+ 명령줄 도구입니다. 인수 없이 실행하면 방향키와 Enter로 조작하는
-대화형 화면이 열리고, 옵션을 지정하면 스크립트와 자동화 환경에서도 사용할 수
-있습니다.
+**heiccy(헤이키)**는 복사한 HEIC를 JPEG·PNG로 자동 변환해 **⌘V**로 붙여넣을 수
+있도록 준비하는 macOS 메뉴바 앱입니다. 사진은 내 컴퓨터에서 처리하고 원본 파일은
+변경하지 않습니다. 앱에 Python 런타임과 코덱이 포함되어 있어 Python을 따로 설치할
+필요가 없습니다.
 
-**HEIC Converter**는 Apple Silicon, macOS 15 이상을 대상으로 하는 독립 메뉴 막대
-앱입니다. Python 런타임과 이미지 코덱을 포함하므로 별도 Python 설치가 필요하지 않습니다.
-[이슈 #7](https://github.com/jaehunshin-git/heic-converter-tui/issues/7)의 자동 클립보드
-변환은 현재 소스에서 구현 중이며 아직 릴리스되지 않았습니다. 아래 설명을 기존
-릴리스의 기능으로 해석하지 마세요.
+같은 저장소에서 폴더 변환과 스크립트 자동화를 위한 CLI·방향키 TUI도 제공합니다.
+Python 패키지 설치는 [CLI/TUI](#clitui), 영어 문서는 [README.md](README.md)를
+참고하세요.
 
-사진은 로컬에서 처리하고 원본 파일은 변경하지 않습니다. CLI/TUI는 별도 출력
-디렉터리에 결과를 저장하며 앱은 클립보드용 임시 결과를 준비합니다. CLI/TUI 패키지는
-[PyPI](https://pypi.org/project/heic-converter-tui/)에서 배포합니다.
+**배포 상태:** macOS 앱은 소스에 구현되어 있으나 아직 공개 릴리스하지 않았습니다.
+현재 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)에는
+Python 릴리스만 있으며 DMG 다운로드는 없습니다. 공개 DMG 배포는
+[이슈 #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13)에서 진행합니다.
 
-## ✨ 주요 기능
+## macOS 앱 설치
 
-| 기능 | 설명 |
-| --- | --- |
-| 메뉴 막대 앱(이슈 #7, 미릴리스) | 왼쪽 클릭 패널에는 현재 클립보드 파일의 이름·썸네일·상태만 표시합니다. 오른쪽 클릭은 일시정지·다시 시작, 설정 열기와 앱 종료를 제공합니다. 복사 감지로 패널을 열지 않습니다. |
-| 자동 클립보드 변환(구현 중) | 지원하는 HEIC를 JPEG/PNG로 변환한 뒤 기존 ⌘V로 붙여넣습니다. 다른 항목을 보존하고 모든 HEIC 성공 및 현재 클립보드 세대 확인 후에만 게시합니다. |
-| 다국어 방향키 TUI | 한국어 또는 English를 먼저 고른 뒤 입력·출력 경로, 형식, 품질, 메타데이터 및 충돌 정책을 순서대로 선택합니다. |
-| 자동화용 CLI | 동일한 기능을 명령어 옵션으로 지정해 비대화형 환경에서 실행할 수 있습니다. |
-| JPEG·PNG 출력 | JPEG는 품질을, PNG는 압축 수준을 조정할 수 있습니다. |
-| HDR 색상 유지 | macOS 15 이상에서 Apple HDR 게인 맵을 16비트 HDR PNG에 반영합니다. |
-| 안전한 메타데이터 기본값 | GPS와 XMP를 제거하면서 EXIF 촬영 정보와 ICC 프로파일은 가능한 범위에서 보존합니다. |
-| 안정적인 파일 처리 | 임시 파일에 먼저 저장한 뒤 결과를 반영하며, 한 파일이 실패해도 나머지 변환을 계속합니다. |
-| 재귀 변환 | `--recursive`를 사용하면 하위 디렉터리를 검색하고 상대 디렉터리 구조를 유지합니다. |
-| 충돌 정책 | 자동 이름 변경, 건너뛰기, 덮어쓰기 또는 오류 처리를 선택할 수 있습니다. |
+### 요구 사항
 
-## 🧭 설계 방향
+- Apple Silicon Mac(arm64), macOS 15 이상
+- 패키징된 앱 실행 시 별도 Python 설치 불필요
 
-- **로컬 처리:** 사진 파일을 네트워크로 전송하지 않고 사용자 컴퓨터에서 변환합니다.
-- **안전한 기본값:** 기본 메타데이터 정책은 위치 정보를 제거하는 `safe`, 기본 충돌
-  정책은 기존 파일을 덮어쓰지 않는 `rename`입니다.
-- **일관된 결과:** 방향 정보를 실제 픽셀에 적용하고, 메타데이터를 기록하는 경우
-  출력 EXIF 방향 값을 정규화합니다.
-- **자동화 친화성:** 대화형 화면과 비대화형 명령이 같은 변환 기능과 종료 코드를
-  공유합니다.
+### DMG 다운로드와 설치
 
-## 🛠 기술 스택
+앱 배포 경로는 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)입니다.
+**현재 공개된 DMG는 없습니다.** 아래 절차는 소스에서 빌드한 앱·DMG 또는 향후
+공개되는 앱 릴리스에 적용합니다.
 
-| 분류 | 기술 |
-| --- | --- |
-| 실행 환경 | Python 3.11+ |
-| macOS 앱 | SwiftUI, AppKit NSPanel, 내장 JSONL worker |
-| 명령줄 | Typer, Rich |
-| 터미널 UI | Questionary |
-| 이미지 처리 | Pillow, pillow-heif, macOS ImageIO(PyObjC) |
-| 테스트 및 빌드 | Pytest, Ruff, Hatchling, uv |
+1. 같은 빌드나 릴리스에서 DMG와 해당 `.sha256` 파일을 받습니다.
+2. 두 파일이 있는 디렉터리에서 체크섬을 확인합니다.
 
-## 📁 프로젝트 구조
+   ```bash
+   shasum -a 256 -c heiccy-0.3.0-arm64.dmg.sha256
+   ```
 
-```text
-heic-converter/
-├── src/heic_converter/
-│   ├── cli.py              # 명령어 옵션, 진행 및 결과 요약
-│   ├── core.py             # 파일 검색, 경로 계획, 이미지 변환 및 원자적 저장
-│   ├── service.py          # 공통 배치 서비스와 명시적 파일 목록 입력
-│   ├── worker.py           # 버전이 있는 JSONL 요청과 이벤트
-│   └── tui.py              # 방향키 기반 대화형 설정 화면
-├── macos/                  # Swift Package 앱과 테스트
-├── packaging/macos/        # 고정 worker 빌드, 서명 및 DMG 검증
-├── docs/                   # 한국어 빌드 및 검증 문서
-├── tests/                  # CLI, TUI, 이미지 변환 및 파일 처리 테스트
-├── pyproject.toml          # 패키지 메타데이터와 의존성
-└── uv.lock                 # 재현 가능한 개발 의존성 잠금 파일
+3. DMG를 열고 **heiccy.app**을 **Applications**로 드래그합니다.
+4. Applications에서 **heiccy**를 실행하면 메뉴바에 아이콘이 나타납니다.
+
+현재 빌드는 ad-hoc 서명을 사용하며 공증하지 않습니다. 첫 실행이 차단되면
+[Apple 공식 안내](https://support.apple.com/ko-kr/102445)를 따르세요.
+
+### 기존 앱 빌드 교체
+
+파일 이름이 달라 기존 `HEIC Converter.app`이 자동으로 교체되지는 않습니다.
+이전 앱의 메뉴바 메뉴에서 먼저 종료해 앱이 게시한 클립보드를 복구할 수 있도록
+합니다. 이전 앱 번들은 Applications 밖에 백업해 둔 뒤 `heiccy.app`을 설치하고
+해당 앱을 직접 실행하세요. 두 앱을 함께 실행하지 마세요. 이전 빌드로 돌아갈 때도
+heiccy를 먼저 종료합니다.
+
+번들 ID와 설정 키를 유지하므로 저장한 변환 옵션과 레거시 출력 경로를 계속 읽습니다.
+일시정지는 실행 중에만 유지하고 다음 실행에서는 자동 변환이 다시 켜집니다.
+
+### 소스에서 앱 빌드
+
+빌드에는 macOS SDK가 포함된 Xcode 또는 Command Line Tools와 `uv`가 필요합니다.
+Apple Silicon Mac에서 저장소 루트를 기준으로 실행합니다.
+
+```bash
+bash packaging/macos/build.sh
 ```
 
-## 🚀 시작하기
+현재 소스의 산출물은 `dist/macos/heiccy.app`,
+`dist/macos/heiccy-0.3.0-arm64.dmg`와 같은 이름의 `.sha256` 파일입니다.
+고정 빌드 환경과 검증 절차는
+[앱 빌드·배포 안내](docs/macos-build-release.md)를 참고하세요.
 
-### 독립 실행 macOS 앱
+## heiccy 사용법
 
-**이슈 #7은 현재 구현 중이며 아직 릴리스되지 않았습니다.** 다음은 소스 변경의
-동작 계약이며 기존 DMG의 검증된 기능을 뜻하지 않습니다. 앱은 **Apple Silicon
-arm64, macOS 15 이상**을 대상으로 내장 worker 런타임을 사용합니다. 앱/DMG와
-PyPI 배포 분리를 진행하며 이번 변경에서는 `pyproject.toml`과 Python 패키지 버전을
-0.3.0으로 유지합니다. 기존 배포물은 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases),
-소스 빌드는 [빌드 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)를 참고하세요.
+1. Finder에서 지원하는 로컬 HEIC 파일을 복사하거나 지원하는 raw HEIC 이미지
+   데이터를 복사합니다.
+2. 변환 완료 알림을 기다립니다. 완료 전에 붙여넣으면 원본이 전달될 수 있습니다.
+3. 대상 앱에서 **⌘V**로 붙여넣습니다.
 
-왼쪽 클릭 패널에는 현재 클립보드 파일의 이름·썸네일 및 준비/변환 중/완료/실패
-상태만 표시합니다. 오른쪽 클릭 메뉴는 자동 변환 일시정지·다시 시작, 설정 열기와
-앱 종료를 제공하며 변환 옵션은 별도 설정 창에서 조정합니다. 메뉴 아이콘을 가리키는 돌출부와
-화면 경계 배치를 유지합니다. 복사 감지로 패널을 자동으로 열지 않고 과거 이력은 쌓지 않습니다.
-다른 앱이나 창으로 포커스를 옮기면 패널이 닫힙니다. 메뉴 아이콘을 클릭하면 다시 열립니다.
-메뉴바와 패널은 사진을 담은 클립보드 아이콘을 함께 사용합니다. 패널 높이는 최대 세 행과
-하단 안내에 맞추고 더 긴 목록은 스크롤로 표시합니다. 직접 늘린 패널 높이는 유지합니다.
-패널이 숨겨져 있으면 메뉴 아이콘 아래의 작은 알림에 복사한 HEIC 개수와 변환 진행·결과를
-표시합니다. 알림은 키보드 포커스를 가져오지 않으며 모든 결과가 현재 클립보드에 반영된
-뒤에만 완료를 표시합니다. 완료 알림은 4초, 실패 알림은 6초 뒤에 닫힙니다. 알림을 클릭하면
-현재 클립보드 패널이 열리고 닫기 버튼으로 알림만 숨길 수 있습니다.
-알림 높이는 문구와 진행 막대에 맞춰 자동으로 조절됩니다.
+| 조작 | 동작 |
+| --- | --- |
+| 메뉴바 아이콘 왼쪽 클릭 | 현재 클립보드 파일의 이름·썸네일·변환 상태를 표시하거나 숨깁니다. |
+| 메뉴바 아이콘 오른쪽 클릭 | 자동 변환 일시정지·다시 시작, 설정 열기, 앱 종료를 제공합니다. |
+| 설정 | JPEG·PNG 형식, 품질, 압축 수준과 메타데이터 정책을 고릅니다. |
+| 실행 중인 앱을 Finder·Spotlight에서 다시 열기 | 클립보드 패널을 표시합니다. |
 
-앱에 포커스가 있을 때 `⌘⇧P`로 일시정지·재개, `⌘1`로 현재 클립보드 표시,
-`⌘,`로 설정 열기, `⌘W`로 창 닫기, `⌘Q`로 종료할 수 있습니다. `Esc`는 패널만 숨깁니다.
-macOS 키보드 탐색 또는 전체 키보드 접근을 켜면 Tab·Shift+Tab·Space로 설정을
-이동·조작할 수 있습니다. 읽기 전용 파일 목록은 방향키·Page Up/Down·Home/End로
-스크롤합니다. 실행 중인 앱을 Finder나 Spotlight에서 다시 열면 아이콘 클릭 없이
-패널에 진입합니다. 단축키는 앱에 포커스가 있을 때만 적용됩니다.
+자동 변환은 앱을 실행할 때마다 켜집니다. 일시정지는 해당 실행에만 유지하고 변환
+옵션은 저장합니다. 패널은 포커스가 다른 곳으로 이동하면 닫힙니다. 복사 감지만으로
+패널을 열지 않으며 클립보드 이력은 저장하지 않습니다.
 
-자동 변환은 앱을 실행할 때마다 켜집니다. 일시정지는 해당 실행에만 유지하며 다음
-실행에서는 다시 켜집니다. 예전 설정에 꺼짐이 저장돼 있어도 같은 정책을 적용합니다.
-변환 옵션은 계속 저장합니다. 일시정지 중에는 메뉴바 아이콘의 정지 기호와 패널 안내가
-표시됩니다. 앱 시작과 다시 시작 때 현재 HEIC도 처리합니다.
-클립보드는 0.25초마다 확인합니다. 지원 입력은 파일 URL로 제공되는 읽기 가능한
-로컬 일반 `.heic` 파일과 원문 `public.heic` 이미지 데이터입니다. 확장자는
-대소문자를 구분하지 않습니다. 파일 약속이나 안전하게 읽고 복구할 수 없는 표현은
-거절합니다. 접근이 거부되면 자동 읽기를 중단하고 상태를 안내합니다.
+기본 출력은 JPEG·품질 90입니다. PNG 압축 수준은 6, 메타데이터 정책은 GPS·XMP를
+제거하는 `safe`입니다. macOS 15 이상에서 지원하는 Apple HDR 게인 맵이 있으면
+PNG를 16비트 HDR로 변환할 수 있습니다. JPEG는 SDR이며, HDR 적용 여부는 원본과
+ImageIO 지원에 따라 달라집니다.
 
-Photos 자산 참조 메타데이터(`com.apple.photos.object-reference.asset`)와
-`.photoslibrary` 내부 파일 URL이 함께 있는 입력은 정상 종료 후
-전체 표현의 복구를 보장할 수 없어 지원하지 않습니다. raw HEIC나 다른 변환 가능한
-항목이 있어도 전체 입력을 거절하며 보관함 파일을 읽거나 썸네일로 사용하지 않습니다.
-보관함 URL 없는 raw HEIC 단독 입력은 계속 지원합니다. 파일 변환이 필요하면 원본을
-내보낸 뒤 Finder에서 복사하세요. 파일 약속은 전체 항목의 타입을 먼저 확인해 공급자에게
-표현 데이터를 요청하기 전에 거절합니다.
-일반 오프라인 파일은 열기 전에 거절합니다.
+### 지원 입력과 클립보드 보호
 
-동영상 타입·MOV 등 동영상 파일 URL·Photos 동영상 메타데이터는 함께 제공된
-JPEG/HEIC 미리보기보다 우선합니다. 동영상은 변환 제외로 표시하고 클립보드 표현을
-그대로 유지합니다. Photos가 MOV 원본 대신 JPEG 포스터를 제공한 경우, 클립보드
-보존은 원본 동영상 내보내기와 다릅니다. 원본 파일이 필요하면
-[Photos의 무수정 원본 내보내기](https://support.apple.com/ko-kr/guide/photos/pht6e157c5f/12.0/mac/27)를
-사용하세요. 해석할 수 없는 Photos 메타데이터는 자동 변환하지 않습니다.
+- 읽을 수 있는 로컬 일반 `.heic` 파일 URL과 raw `public.heic` 데이터를 지원합니다.
+- 비HEIC 항목의 순서와 보존 가능한 클립보드 표현을 유지합니다. 모든 HEIC 변환이
+  성공하고 같은 복사 내용이 유지될 때만 결과를 게시합니다. 새 복사가 감지되면
+  이전 변환 결과를 게시하지 않습니다.
+- 변환 항목이 참조하는 파일은 임시 파일이며 원본은 변경하지 않습니다. 정상 종료 시
+  클립보드가 앱의 결과를 유지하고 있으면 원본을 복구합니다. 비정상 종료 후 복구는
+  보장하지 않습니다.
+- 파일 약속, 오프라인 파일, Photos 자산 참조와 `.photoslibrary` 내부 파일 URL이
+  함께 있는 입력은 지원하지 않습니다. 파일 변환이 필요하면 수정하지 않은 원본을
+  내보내 Finder에서 복사하세요. 동영상은 변환 대상에서 제외합니다.
+- 수신 앱마다 지원하는 클립보드 표현이 달라 모든 앱에서 모든 항목을 붙여넣을 수
+  있다고 보장하지 않습니다.
 
-HEIC를 복사하고 완료를 기다린 뒤 대상 앱에서 기존 **⌘V**로 붙여넣습니다. 완료
-전에 붙여넣으면 원본이 전달될 수 있습니다. 비HEIC 파일과 텍스트는 항목 순서와
-보존 가능한 표현을 유지합니다. 모든 HEIC가 성공하고 클립보드 세대가 유효할 때만
-결과를 게시합니다. 새 복사·취소·기능 끄기는 미게시 결과의 게시를 막고, 끄기 전에
-이미 게시한 결과는 유지합니다.
+자세한 동작은 [클립보드 지원 계약](docs/macos-auto-clipboard.md),
+수신 앱에서 확인한 범위는
+[호환성 검증 기록](docs/macos-issue7-remaining-validation.md)을 참고하세요.
 
-변환 항목에는 임시 파일 URL과 이미지 표현을 함께 제공합니다. 현재 클립보드가
-참조하는 동안 임시 파일을 유지하며 일반 출력 폴더에 결과를 누적하지 않습니다.
-정상 종료 시 현재 클립보드가 앱의 게시 세대인 경우에만 원본을 복구한 뒤 임시
-파일을 정리합니다. 복구 실패 시 참조 파일을 유지하고 원본 파일은 변경하지
-않습니다. 비정상 종료 후 복구는 보장하지 않습니다.
+## CLI/TUI
 
-기본 옵션은 JPEG, JPEG 품질 90, PNG 압축 6, 메타데이터 `safe`입니다. 이전에
-저장한 변환 옵션 수치를 유지합니다. 기존 `outputDirectory`와 `onConflict`는
-레거시 설정으로 보존하되 자동 변환 UI에서 제외합니다. CLI/TUI의 출력 경로,
-충돌 정책과 조작 방식은 유지합니다.
-기본값 복원은 화면의 형식·품질·압축·메타데이터만 초기화하며 레거시 저장 경로·충돌
-정책과 현재 일시정지 상태는 유지합니다.
+[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
+[![Python 패키지 다운로드](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 
-[2026-10-11 PR #9 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)에서는 Photos HEIC 복사,
-합성 원본·편집·다중 사진과 동영상 포스터 제외를 확인했습니다. Finder에는 변환 파일
-한 개·세 개와 혼합 파일 여섯 개가 중복 없이 붙었습니다. 카카오톡은 전송 전 미리보기에
-한 개·여섯 개를 표시했으며 당시 전송은 취소했습니다. 별도 복구 도구에서는 종료 후
-Photos 파일 URL이 사라지고 사진·메타데이터만 보존됐습니다. 이는 당시 관찰 기록이며
-현재 Photos 보관함 URL의 지원을 보장하지 않습니다. 당시 macOS 27.2에서 Python
-136개·Swift 95개·Ruff, 앱/DMG smoke와 Python 배포물 검사가 통과했습니다.
-macOS 15·26 Apple Silicon에서도 커밋 `bdbde95`의 테스트, 앱 빌드·DMG 설치·Python
-배포물 검증이 [CI에서 통과했습니다](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
-
-후속 관찰에서 사용자가 미다운로드로 지정한 실제 iCloud 사진의 드래그는 파일 약속과
-`public.jpeg`, 일반 복사는 HEIC 없는 JPEG raw를 제공했습니다. 드래그 타입은 공급자에게
-데이터를 요청하지 않고 관찰했으며 다운로드 상태는 독립적으로 검증하지 않았습니다.
-일반 복사 JPEG는 재변환 없이 앱 실행·정상 종료 후 전체 표현의 타입·바이트·세대가
-보존됐습니다. 수신 앱은 지원하는 표현을 선택하므로 모든 항목의 붙여넣기는 별도 검증
-대상입니다. 현재 결과와 테스트 수, 카카오톡 후속 실기 상태는
-[남은 검증 후속 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md), 구현 중 변경 계약과 체크리스트 판정은
-[이슈 #7 범위 감사](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md), 지원 계약은
-[클립보드 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)을 참고하세요. Python 코어를 수정하지
-않았다는 설명은 PR #9 당시 범위입니다. 후속 범위에는 네이티브 HDR 대표 이미지 선택
-수정이 포함되며 CLI/TUI 및 기존 SDR fallback 정책은 유지합니다.
-
-앱 배포물은 ad-hoc 서명을 사용하며 공증을 받지 않습니다. DMG 포장은 Gatekeeper를
-우회하지 않습니다. 릴리스된 DMG의 체크섬을 확인하고 앱을 Applications에 설치하며,
-실행이 차단되면 [Apple 안내](https://support.apple.com/ko-kr/102445)를 따릅니다.
+[PyPI 패키지](https://pypi.org/project/heic-converter-tui/)는 터미널에서 폴더를 변환할 때
+사용합니다. 배포 이름은 `heic-converter-tui`, 실행 명령은 `heic-converter`를 유지합니다.
+이 패키지 설치로 macOS 독립 앱이 설치되지는 않습니다.
 
 ### CLI/TUI 요구 사항
 
@@ -393,6 +342,40 @@ HEIC의 기본 정지 이미지 한 장만 JPEG 또는 PNG로 변환합니다. �
 | `1` | 하나 이상의 파일을 읽거나 변환하거나 저장하는 중 오류가 발생함 |
 | `2` | 인수·경로·옵션이 잘못됐거나 변환할 `.heic` 파일이 없음 |
 | `130` | 대화형 화면에서 `Ctrl+C`를 누르거나 변환을 취소함 |
+
+## 개발과 문서
+
+| Category | 기술 |
+| --- | --- |
+| macOS App | SwiftUI, AppKit NSPanel |
+| Runtime | 앱 내장 Python 3.12.12, CLI/TUI Python 3.11+ |
+| CLI/TUI | Typer, Rich, Questionary |
+| Imaging | Pillow, pillow-heif, PyObjC를 통한 macOS ImageIO |
+| Testing & Build | XCTest, Pytest, Ruff, SwiftPM, PyInstaller, Hatchling, uv |
+
+```text
+heic-converter-tui/
+├── macos/                  # Swift 메뉴바 앱과 테스트
+├── packaging/macos/        # Worker 빌드, 서명, 아이콘과 DMG 검증
+├── src/heic_converter/     # CLI/TUI, 공통 변환 서비스와 JSONL worker
+├── docs/                   # 빌드·동작·브랜딩·검증 기록
+├── tests/                  # Python 회귀 테스트
+├── pyproject.toml          # Python 패키지 메타데이터와 의존성
+└── uv.lock                 # 고정된 개발 의존성
+```
+
+| 문서 | 내용 |
+| --- | --- |
+| [앱 빌드·배포 안내](docs/macos-build-release.md) | 빌드 환경, 앱·DMG 검증과 배포 절차 |
+| [클립보드 지원 계약](docs/macos-auto-clipboard.md) | 지원 입력, 결과 게시·취소와 정리 정책 |
+| [키보드 접근 검증](docs/macos-issue11-panel-startup.md) | 콜드 스타트 메뉴 진입과 키보드 검증 기록 |
+| [PR #9 검증 기록](docs/macos-issue7-pr-readiness.md) | 당시 클립보드·수신 앱 확인 결과 |
+| [이슈 #7 범위 감사](docs/macos-issue7-scope-audit.md) | 요구사항 변경·검증 범위와 남은 작업 |
+| [브랜딩 기록](docs/macos-branding.md) | 확정 이름·자산, 호환성 결정과 검증 기록 |
+| [브랜드 자산 기준](docs/assets/branding/DESIGN.md) | 로고·앱 아이콘·메뉴바 심볼 규격 |
+
+앱·DMG와 PyPI 패키지는 독립적으로 릴리스합니다. 공개 DMG 배포와 저장소 이름 변경은
+[이슈 #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13)에서 진행합니다.
 
 ## 라이선스
 

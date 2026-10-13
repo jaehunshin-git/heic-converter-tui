@@ -1,197 +1,132 @@
-# HEIC Converter
+<img src="docs/assets/branding/heiccy-app-icon.png" alt="heiccy app icon" width="96" height="96" />
 
-[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
-[![Downloads](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
-[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/LICENSE)
-![macOS](https://img.shields.io/badge/Platform-macOS-000000?logo=apple&logoColor=white)
+# heiccy
+
+![macOS](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)
+![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-arm64-555555)
 ![Local processing](https://img.shields.io/badge/Processing-Local%20only-2E8B57)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-> Convert locally from the macOS menu bar, configure with arrow keys, or automate with the CLI.
+> HEIC to JPEG or PNG, automatically.
 
-`heic-converter-tui` converts `.heic` photos in a directory to JPEG or PNG. Run it
-without arguments for an interactive terminal UI driven by arrow keys and Enter,
-or provide options for scripts and other non-interactive environments.
+**heiccy** is a macOS menu bar app that converts supported HEIC clipboard images
+into JPEG or PNG, ready to paste with **Command-V**. Photos are processed on your
+computer and source files remain unchanged. The app includes its Python runtime
+and codecs, so you do not need to install Python separately.
 
-**HEIC Converter** is the standalone menu bar app targeting Apple Silicon and
-macOS 15+. Its bundled Python runtime and codecs do not require a separate Python installation.
-The automatic clipboard workflow in [issue #7](https://github.com/jaehunshin-git/heic-converter-tui/issues/7)
-is currently being implemented in source and has not been released. This description
-must not be treated as a capability of an existing release.
+The same repository provides a CLI and an arrow-key TUI for directory conversion
+and scripts. See [CLI/TUI](#clitui) for Python package installation and
+[README.ko.md](README.ko.md) for Korean documentation.
 
-Photos are processed locally and source files remain unchanged. The CLI/TUI writes
-converted files to a separate output directory. The app prepares temporary clipboard
-results. The CLI/TUI package is available on [PyPI](https://pypi.org/project/heic-converter-tui/).
-See [README.ko.md](README.ko.md) for Korean documentation.
+**Release status:** The macOS app is implemented in source but has not been
+publicly released. [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)
+currently provides Python releases, with no DMG download. Public DMG distribution
+is tracked in [issue #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13).
 
-## ✨ Features
+## macOS app installation
 
-| Feature | Description |
-| --- | --- |
-| Menu bar app (issue #7, unreleased) | Left-click shows current clipboard file names, thumbnails, and status. Right-click offers Pause/Resume, Settings, and Quit. Copy detection does not open the panel. |
-| Automatic clipboard conversion (in implementation) | Convert supported HEIC inputs to JPEG/PNG, then paste with the usual Command-V. Preserve other items and publish only when every HEIC succeeds and the clipboard generation is still current. |
-| Localized arrow-key TUI | Choose Korean or English first, then set input and output paths, format, quality, metadata policy, and conflict policy step by step. |
-| Automation-ready CLI | Use the same capabilities through command-line options in scripts and non-interactive environments. |
-| JPEG and PNG output | Configure JPEG quality or PNG compression level. |
-| HDR color preservation | On macOS 15 or later, convert Apple HDR gain maps into 16-bit HDR PNG output. |
-| Safe metadata by default | Remove GPS and XMP while retaining other EXIF capture data and ICC profiles where possible. |
-| Reliable file handling | Write to a temporary file before committing the result; a failed file does not stop the remaining conversions. |
-| Recursive conversion | Use `--recursive` to include subdirectories while preserving the relative directory layout. |
-| Conflict policies | Rename, skip, overwrite, or report an error when an output file already exists. |
+### Requirements
 
-## 🧭 Design principles
+- Apple Silicon Mac (arm64), macOS 15 or later
+- No separate Python installation required to run the packaged app
 
-- **Local processing:** Photos are converted on your computer and are never sent to a network service.
-- **Safe defaults:** The default metadata policy is `safe`, which removes location data; the default conflict policy is `rename`, which avoids overwriting existing files.
-- **Consistent output:** Image orientation is applied to pixels and, when metadata is written, the output EXIF orientation value is normalized.
-- **Automation-friendly:** The interactive UI and non-interactive command use the same conversion behavior and exit codes.
+### DMG download and installation
 
-## 🛠 Technology stack
+The app's distribution destination is [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
+**A public DMG is not available yet.** The following installation steps apply to
+an app/DMG built from source or a future published app release:
 
-| Category | Technology |
-| --- | --- |
-| Runtime | Python 3.11+ |
-| macOS app | SwiftUI, AppKit NSPanel, bundled JSONL worker |
-| CLI | Typer, Rich |
-| TUI | Questionary |
-| Imaging | Pillow, pillow-heif, macOS ImageIO through PyObjC |
-| Testing & Build | Pytest, Ruff, Hatchling, uv |
+1. Obtain the DMG and its matching `.sha256` file from the same build or release.
+2. In the directory containing both files, verify the checksum:
 
-## 📁 Project structure
+   ```bash
+   shasum -a 256 -c heiccy-0.3.0-arm64.dmg.sha256
+   ```
 
-```text
-heic-converter/
-├── src/heic_converter/
-│   ├── cli.py              # CLI options, progress, and summary
-│   ├── core.py             # File discovery, path planning, conversion, atomic writes
-│   ├── service.py          # Shared batch service and explicit file-list input
-│   ├── worker.py           # Versioned JSONL requests and events
-│   └── tui.py              # Arrow-key interactive configuration UI
-├── macos/                  # Swift Package app and tests
-├── packaging/macos/        # Pinned worker build, signing, and DMG validation
-├── docs/                   # Korean build and verification documentation
-├── tests/                  # CLI, TUI, image conversion, and file-handling tests
-├── pyproject.toml          # Package metadata and dependencies
-└── uv.lock                 # Locked development dependencies
+3. Open the DMG and drag **heiccy.app** to **Applications**.
+4. Open **heiccy** from Applications; its icon appears in the menu bar.
+
+Current builds use ad-hoc signing and are not notarized. If macOS blocks the first
+launch, follow [Apple's instructions](https://support.apple.com/102445).
+
+### Replacing an earlier app build
+
+The new filename does not replace an existing `HEIC Converter.app` automatically.
+Quit the earlier app from its menu bar menu before installing `heiccy.app`, so it
+can restore any clipboard data it published. Keep the earlier bundle outside
+Applications as a backup, then install and open `heiccy.app` explicitly. Do not
+run both copies together. If you return to the earlier build, quit heiccy first.
+
+The bundle identifier and settings key are unchanged, so saved conversion options
+and legacy output paths remain available. Pause is session-only; automatic
+conversion starts enabled on the next launch.
+
+### Build the app from source
+
+Building requires Xcode or Command Line Tools with the macOS SDK, and `uv`.
+From the repository root on an Apple Silicon Mac:
+
+```bash
+bash packaging/macos/build.sh
 ```
 
-## 🚀 Getting started
+The current source builds `dist/macos/heiccy.app`,
+`dist/macos/heiccy-0.3.0-arm64.dmg`, and the matching `.sha256` file.
+See [the build and release guide](docs/macos-build-release.md)
+for the pinned build environment and validation steps.
 
-### Standalone macOS app
+## Using heiccy
 
-**Issue #7 is currently being implemented and is not released.** The following
-workflow describes the source change contract, not verified behavior of an existing DMG.
-The app targets **Apple Silicon arm64, macOS 15+** and bundles its worker runtime.
-App/DMG distribution is being separated from PyPI distribution; this change keeps
-`pyproject.toml` and the Python package version at 0.3.0. Existing releases are
-available through [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
-For source builds, see [the build guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md).
+1. Copy a supported local HEIC file in Finder, or supported raw HEIC image data.
+2. Wait for the conversion-complete notice. Pasting before completion may paste
+   the original image.
+3. Paste with **Command-V** in the receiving app.
 
-The minimal panel shows only the current clipboard's file names, thumbnails,
-and ready/converting/completed/failed status. Left-click opens or hides it;
-right-click offers Pause/Resume, Settings, and Quit. Settings live in
-a separate window. The pointer to the menu bar icon and screen-edge placement remain.
-Copy detection never opens the panel and no clipboard history is kept.
-The panel closes when focus moves to another app or window. Click the menu bar icon to open it again.
-The photo-in-clipboard icon is shared by the menu bar and panel. The panel height
-fits up to three file rows and the footer; longer lists scroll. A manually enlarged
-panel retains its height.
-When the panel is hidden, a small notice below the menu bar icon shows the copied
-HEIC count, conversion progress, and the final result without taking keyboard focus.
-Success appears only after all results are published to the current clipboard.
-Completion notices close after four seconds; failures close after six seconds.
-Click a notice to open the current clipboard panel, or dismiss it with its close button.
-The notice height fits its text and progress bar automatically.
+| Control | Action |
+| --- | --- |
+| Left-click the menu bar icon | Show or hide the current clipboard's file names, thumbnails, and conversion status. |
+| Right-click the menu bar icon | Pause/resume automatic conversion, open Settings, or quit. |
+| Settings | Choose JPEG/PNG, quality, compression, and metadata handling. |
+| Reopen the running app from Finder or Spotlight | Show the clipboard panel. |
 
-Keyboard access is available while the app has focus: Command-Shift-P pauses/resumes,
-Command-1 shows the current clipboard, Command-comma opens Settings, Command-W closes
-the current window, and Command-Q quits. Escape hides the panel. Use Tab/Shift-Tab
-and Space to navigate and activate settings controls with macOS keyboard navigation
-or Full Keyboard Access enabled. Arrow keys, Page Up/Down, and Home/End scroll the
-read-only file list. Reopen the running app from Finder or Spotlight to show the
-panel without clicking its status icon; these shortcuts are not global.
+Automatic conversion starts enabled on each launch. Pause lasts for the current
+session; conversion options persist. The panel closes when focus moves away.
+Copy detection does not open it, and the app keeps no clipboard history.
 
-Automatic conversion starts enabled on every launch. Pause applies only to the
-current session; the next launch starts enabled even if an older configuration
-saved the feature as disabled. Conversion options still persist. A paused menu bar
-icon shows a pause mark and the panel explains how to resume. Startup and resume
-also process the current HEIC input. Clipboard polling is every
-0.25 seconds. Supported input is a readable local regular `.heic` file represented
-by a file URL, or raw `public.heic` image data. File extensions are case-insensitive.
-File promises and representations that cannot be read and restored safely are rejected.
-An access denial stops automatic reads and is shown as a status.
+The default output is JPEG at quality 90. PNG compression defaults to 6 and the
+metadata policy is `safe`, which removes GPS and XMP where supported. On macOS 15+
+with supported Apple HDR gain maps, PNG output can preserve HDR in 16-bit form;
+JPEG output is SDR. HDR conversion depends on the source and ImageIO support.
 
-Inputs that combine Photos asset-reference metadata (`com.apple.photos.object-reference.asset`)
-with a file URL inside a `.photoslibrary`
-are unsupported because full restoration after normal quit cannot be guaranteed.
-This rejects the entire input even when raw HEIC or other convertible items are
-present, without opening the library file or using it for a thumbnail. Raw HEIC
-without a Photos library URL remains supported. Export an original file and copy
-it from Finder to use the file workflow. File-promise types are checked across
-all items before requesting any representation data from their providers.
-Offline ordinary files are rejected before opening them.
+### Supported input and clipboard safety
 
-Video declarations, MOV/other movie file URLs, and Photos video asset metadata
-take priority over accompanying JPEG/HEIC previews. Videos are shown as excluded
-and their clipboard representations remain unchanged. Photos may supply a JPEG
-poster rather than the original MOV file; preserving that clipboard does not export
-the video. To obtain the original video file, use
-[Photos' unmodified-original export](https://support.apple.com/ko-kr/guide/photos/pht6e157c5f/12.0/mac/27).
-Unrecognized Photos asset metadata prevents automatic publication.
+- Readable local regular `.heic` file URLs and raw `public.heic` data are supported.
+- Non-HEIC items retain their order and preservable clipboard representations.
+  Results are published only after every HEIC conversion succeeds and the
+  clipboard still contains the same copy. A newer copy cancels stale publication.
+- Files referenced by converted clipboard items are temporary. Source files are
+  unchanged. Normal quit restores the original clipboard when it still contains
+  the app's results; recovery after an abnormal exit is not guaranteed.
+- File promises, offline files, and Photos asset references combined with file
+  URLs inside a `.photoslibrary` are unsupported. Export an unmodified original
+  and copy it from Finder for the file workflow. Videos are excluded.
+- Receiving apps choose which clipboard representations to accept; pasting every
+  item in every app is not guaranteed.
 
-Copy supported HEIC content, wait for completion, then use the usual **Command-V**
-in the receiving app. Pasting before conversion completes may deliver the original.
-Non-HEIC files and text retain their item order and preservable representations.
-All HEIC conversions must succeed before publishing; a new copy, cancellation, or
-turning the feature off prevents pending results from overwriting the clipboard.
-Turning it off leaves already published results in place.
+See [the clipboard behavior and support contract](docs/macos-auto-clipboard.md)
+and [compatibility validation records](docs/macos-issue7-remaining-validation.md)
+for detailed behavior and observed receiving-app limitations.
 
-Converted items provide a temporary file URL and image representations for receiving
-apps. Referenced files remain available while the published clipboard needs them;
-results do not accumulate in a normal output folder. Normal quit restores the original
-only if the clipboard is still the app's published generation, then cleans up temporary
-files. Failed restoration retains referenced files. Synthetic items passed preservation
-checks after process exit. Follow-up checks also confirmed that the JPEG raw clipboard
-provided by Photos remained intact through app launch and normal quit, including
-all types, bytes, and the clipboard generation. This does not establish restoration
-of the unsupported Photos library URLs. Source files are never modified.
-Recovery after an abnormal exit is not guaranteed.
+## CLI/TUI
 
-Defaults remain JPEG, JPEG quality 90, PNG compression 6, and metadata `safe`.
-Previously saved conversion values are retained. Legacy `outputDirectory` and
-`onConflict` settings are preserved but excluded from the automatic conversion UI.
-The CLI/TUI retains its existing output paths, conflict policies, and controls.
-Restoring defaults resets the visible format, quality, compression, and metadata
-options while preserving legacy paths, conflict settings, and the current pause state.
+[![PyPI](https://img.shields.io/pypi/v/heic-converter-tui?logo=pypi&logoColor=white)](https://pypi.org/project/heic-converter-tui/)
+[![Python package downloads](https://api.pepy.tech/personalized-badge/heic-converter-tui?period=month&units=none&left_color=grey&right_color=blue&left_text=downloads%2Fmonth)](https://pepy.tech/projects/heic-converter-tui)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 
-The [PR #9 record from 2026-10-11 (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md)
-covered Photos HEIC copy, synthetic original/edited/multiple photos, and video-poster
-exclusion. Finder pasted one and three converted files and six mixed files without
-duplicates. KakaoTalk showed one and six files in its pre-send preview; no message
-was sent in those checks. A separate restore tool lost the Photos file URL after
-exit while retaining the image and metadata. These are historical results, not
-current support guarantees for Photos library URLs. At that time, local validation
-passed 136 Python tests, 95 Swift tests, Ruff, app/DMG smoke and Python distribution
-checks on macOS 27.2. Apple Silicon macOS 15 and 26 also passed tests, app builds,
-DMG installation checks and Python distribution validation for commit `bdbde95`
-in [GitHub Actions](https://github.com/jaehunshin-git/heic-converter-tui/actions/runs/38128156256).
-
-Follow-up observation of an actual iCloud photo that the user identified as not
-downloaded found file-promise types and `public.jpeg` during drag, and JPEG raw
-without HEIC during ordinary copy. The drag type observation requested no provider
-data; the download state was not independently verified. JPEG copy is preserved
-without HEIC conversion. Receiving apps choose supported representations and may
-not paste every preserved item. See [the clipboard contract (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)
-and [the remaining-validation follow-up (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)
-for current results, test totals, and KakaoTalk verification status. The historical
-Python-core-unchanged scope applies to PR #9; the follow-up fixes native HDR primary
-image selection while preserving CLI/TUI and existing SDR fallback policies.
-Changes to the original issue requirements and the checklist audit are recorded in
-[the issue #7 scope audit (Korean)](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md).
-
-App packages use ad-hoc signing and are not notarized. DMG packaging does not bypass
-Gatekeeper. Verify a released DMG's checksum, install the app into Applications, and
-follow [Apple's launch instructions](https://support.apple.com/102445) if blocked.
+The [PyPI package](https://pypi.org/project/heic-converter-tui/) is the directory
+converter for terminal users. Its distribution name remains `heic-converter-tui`
+and its command remains `heic-converter`; installing it does not install the
+standalone macOS app.
 
 ### CLI/TUI requirements
 
@@ -397,7 +332,7 @@ JPEG or PNG. It does not support:
 - OCR or text extraction
 - Live Photo video processing
 - Extracting auxiliary images, sequences, or video instead of the primary still image
-- Single-file input through the CLI (the app accepts explicit file lists)
+- Single-file input through the CLI (the app uses clipboard input)
 
 ### Exit codes
 
@@ -407,6 +342,41 @@ JPEG or PNG. It does not support:
 | `1` | One or more files could not be read, converted, or saved. |
 | `2` | An argument, path, or option is invalid, or no `.heic` files were found. |
 | `130` | The interactive UI was interrupted with `Ctrl+C` or cancelled. |
+
+## Development and documentation
+
+| Category | Technology |
+| --- | --- |
+| macOS App | SwiftUI, AppKit NSPanel |
+| Runtime | Bundled Python 3.12.12 for the app; Python 3.11+ for CLI/TUI |
+| CLI/TUI | Typer, Rich, Questionary |
+| Imaging | Pillow, pillow-heif, macOS ImageIO through PyObjC |
+| Testing & Build | XCTest, Pytest, Ruff, SwiftPM, PyInstaller, Hatchling, uv |
+
+```text
+heic-converter-tui/
+├── macos/                  # Swift menu bar app and tests
+├── packaging/macos/        # Worker build, signing, icons, and DMG validation
+├── src/heic_converter/     # CLI/TUI, shared conversion service, and JSONL worker
+├── docs/                   # Build, behavior, branding, and validation records
+├── tests/                  # Python regression tests
+├── pyproject.toml          # Python package metadata and dependencies
+└── uv.lock                 # Locked development dependencies
+```
+
+| Document | Contents |
+| --- | --- |
+| [Build and release guide](docs/macos-build-release.md) | Build environment, app/DMG validation, and release procedure. |
+| [Clipboard contract](docs/macos-auto-clipboard.md) | Supported input, publication, cancellation, and cleanup behavior. |
+| [Keyboard access verification](docs/macos-issue11-panel-startup.md) | Cold-start menu access and keyboard validation records. |
+| [PR #9 validation record](docs/macos-issue7-pr-readiness.md) | Historical clipboard and receiving-app checks. |
+| [Issue #7 scope audit](docs/macos-issue7-scope-audit.md) | Requirement changes, verification boundaries, and remaining work. |
+| [Branding](docs/macos-branding.md) | Approved name, assets, compatibility decisions, and verification records. |
+| [Brand assets](docs/assets/branding/DESIGN.md) | Logo, app icon, and menu bar symbol specifications. |
+
+These technical documents are written in Korean. App/DMG releases and PyPI
+releases are managed independently. Public DMG distribution and the repository
+rename are tracked in [issue #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13).
 
 ## License
 
