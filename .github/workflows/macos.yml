@@ -35,7 +35,7 @@ jobs:
           uv pip sync --python .venv-app-build/bin/python --require-hashes packaging/macos/requirements.lock
       - name: Python 정적 검사와 회귀 테스트
         run: |
-          .venv-app-build/bin/ruff check src tests packaging/macos
+          .venv-app-build/bin/ruff check src tests scripts packaging/macos
           PYTHONPATH=src .venv-app-build/bin/python -m pytest
       - name: Swift 빌드와 회귀 테스트
         run: |
