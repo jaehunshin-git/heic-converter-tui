@@ -1,6 +1,6 @@
 # macOS 앱 빌드와 패키징
 
-Apple Silicon arm64, macOS 15 이상이 대상이며 기능 버전은 0.3.0이다. 실행 시 사용자의 Python, Homebrew, uv 또는 pip를 호출하지 않는다. Swift 실행 파일이 `Contents/Resources/worker/heic-worker`를 `Process`로 직접 실행한다.
+macOS 앱의 표시 이름은 **heiccy**다. Apple Silicon arm64, macOS 15 이상이 대상이며 기능 버전은 0.3.0이다. 실행 시 사용자의 Python, Homebrew, uv 또는 pip를 호출하지 않는다. Swift 실행 파일이 `Contents/Resources/worker/heic-worker`를 `Process`로 직접 실행한다.
 
 ## 고정 환경
 
@@ -19,25 +19,27 @@ bash packaging/macos/build.sh
 
 ## 조립 및 검증
 
+앱 아이콘은 [확정 원본 PNG](../../docs/assets/branding/heiccy-app-icon.png)를 사용한다. `create_icon.py`가 16·32·128·256·512pt의 1x·2x PNG를 생성하고 `iconutil`로 `AppIcon.icns`를 만든다. 글꼴과 심볼 기하, 흰 타일의 규격은 [디자인 기준](../../docs/assets/branding/DESIGN.md)을 따른다.
+
 1. PyInstaller onedir에 Python, Pillow, pillow-heif, PyObjC의 objc/Foundation/Quartz와 필요한 네이티브 코덱을 수집한다.
 2. Swift Package의 arm64 릴리스 실행 파일을 빌드하고 `Info.plist`, 생성 아이콘과 라이선스 고지를 명시적으로 복사한다. 프로젝트 루트나 사진 폴더 전체를 복사하지 않는다.
 3. Mach-O 파일과 중첩 프레임워크, 앱을 안쪽부터 무료 ad-hoc 서명한다. PyInstaller의 기본 runtime 서명은 무료 ad-hoc 환경에서 Python 라이브러리 로드에 실패할 수 있어 모든 코드를 hardened runtime 없이 다시 서명한다.
 4. 모든 Mach-O의 arm64 아키텍처, 상대 로더 경로, 최소 OS 버전과 ad-hoc 서명, 앱 버전과 허용 목록을 검사한다.
 5. 임시 폴더에 합성한 HEIC를 사용해 사용자 Python이 없는 PATH에서 JPEG와 PNG 변환을 확인한다. 합성 Apple 게인 맵 HEIC의 내장 PyObjC HDR 경로도 실행해 16비트 PNG와 PQ ICC 또는 cICP, safe GPS 제거, 원본 보존을 검증한다. 앱 `--smoke-test`도 내장 worker 연결을 확인한다.
-6. 앱과 `/Applications` 심볼릭 링크만 담은 DMG를 만들고 SHA-256을 생성한다. 읽기 전용으로 마운트한 뒤 임시 설치 복사본의 앱과 worker를 다시 실행한다.
+6. `heiccy.app`과 `/Applications` 심볼릭 링크만 담은 `heiccy` 볼륨의 DMG를 만들고 SHA-256을 생성한다. 읽기 전용으로 마운트하고 실제 볼륨 이름이 `heiccy`인지 확인한 뒤 임시 설치 복사본의 앱과 worker를 다시 실행한다.
 
-산출물은 다음과 같다.
+산출물은 다음과 같다. 앱 표시 이름과 패널 이름은 `heiccy`이며, 내부 실행 파일 `HEICConverter`와 번들 ID `io.github.jaehunshin-git.heic-converter`는 유지한다. PyPI 패키지·CLI 이름과 기존 `~/Pictures/HEIC Converter` 출력 폴더도 유지한다.
 
-- `dist/macos/HEIC Converter.app`
-- `dist/macos/HEIC-Converter-0.3.0-arm64.dmg`
-- `dist/macos/HEIC-Converter-0.3.0-arm64.dmg.sha256`
+- `dist/macos/heiccy.app`
+- `dist/macos/heiccy-0.3.0-arm64.dmg`
+- `dist/macos/heiccy-0.3.0-arm64.dmg.sha256`
 
 별도 검증은 다음 명령으로 재실행할 수 있다.
 
 ```sh
-.venv-app-build/bin/python packaging/macos/validate_app.py 'dist/macos/HEIC Converter.app'
-.venv-app-build/bin/python packaging/macos/test_panel_startup.py 'dist/macos/HEIC Converter.app'
-.venv-app-build/bin/python packaging/macos/validate_dmg.py dist/macos/HEIC-Converter-0.3.0-arm64.dmg
+.venv-app-build/bin/python packaging/macos/validate_app.py 'dist/macos/heiccy.app'
+.venv-app-build/bin/python packaging/macos/test_panel_startup.py 'dist/macos/heiccy.app'
+.venv-app-build/bin/python packaging/macos/validate_dmg.py dist/macos/heiccy-0.3.0-arm64.dmg
 .venv-app-build/bin/python -m build --no-isolation
 .venv-app-build/bin/python packaging/macos/validate_python_dist.py dist
 ```
@@ -46,7 +48,7 @@ wheel과 sdist는 버전 0.3.0, 지정 경로 허용 목록, 영어 Summary와 R
 
 ## 설치와 배포
 
-DMG를 열고 HEIC Converter를 Applications로 드래그한다. 첫 실행이 차단되면 한 번 실행을 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안 → 확인 없이 열기로 허용한다. ad-hoc 서명과 DMG는 Developer ID 서명·공증이나 Gatekeeper 신뢰를 제공하지 않는다. 이 버전은 Developer ID 서명과 공증을 수행하지 않는다.
+DMG를 열고 heiccy를 Applications로 드래그한다. 첫 실행이 차단되면 한 번 실행을 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안 → 확인 없이 열기로 허용한다. ad-hoc 서명과 DMG는 Developer ID 서명·공증이나 Gatekeeper 신뢰를 제공하지 않는다. 이 버전은 Developer ID 서명과 공증을 수행하지 않는다.
 
 `.github/workflows/macos.yml`은 Apple Silicon `macos-15`와 `macos-26`에서 Python 검사, Swift 검사, 앱/worker/DMG 설치본 실행과 Python 배포 파일 검증 후 CI 아티팩트를 업로드한다. PR에서 릴리스를 게시하거나 main에 머지하지 않는다. 앱 버전은 `Info.plist`, Python 버전은 `pyproject.toml`에서 독립적으로 관리한다. 배포 담당자는 앱 전용 `macos-v<앱 버전>` 태그의 검증한 DMG·체크섬을 GitHub Releases에 게시한다. Python 릴리스는 별도의 `v<Python 버전>` 태그와 wheel·sdist로 PyPI에 게시하며 앱 전용 변경은 PyPI에 업로드하지 않는다. 이미 게시된 PyPI 메타데이터를 덮어쓰지 않는다.
 
