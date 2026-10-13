@@ -268,7 +268,7 @@ bash scripts/install_git_hooks.sh
 ```
 
 훅은 잘못된 제목, 서술형 종결, footer 형식 위반을 차단합니다.
-[훅 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/commit-message-hooks.md)에서
+[훅 안내](docs/commit-message-hooks.md)에서
 규칙과 판별 한계, 기존 훅 설정 처리, worktree 적용 범위와 해제 방법을 확인하세요.
 개발용 훅은 소스 체크아웃에 제공하며 PyPI 배포에는 포함하지 않습니다.
 

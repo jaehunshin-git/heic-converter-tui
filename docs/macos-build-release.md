@@ -13,19 +13,25 @@
 [코덱 대응 소스 안내](third-party-sources.md)에서 관리한다.
 공개 exporter는 이 문서와 과거 내부 검증 기록을 복사하지 않는다.
 
-## 현재 선택과 보류 상태 (2026-10-13)
+## 현재 운영 상태 (2026-10-13)
 
-사용자는 계정 플랜이 GitHub Free임을 확인하고
-**Private 전환 보류, 나머지 검증 완료 (권장)**를 선택했다. 현재 자동 게시 변수는
-`HEICCY_RELEASE_ENABLED=false`이며 DMG 게시·PR #16 머지·개발 저장소의 Private 전환을 모두 보류한다.
-개발 저장소는 Public 상태를 유지하고 기존 `main` 브랜치 보호와 `public-release`
-environment의 보호 설정을 유지한다. 설치 실기와 나머지 검증은 진행하되 실제
-완료 여부는 [이슈 #13 검증 기록](macos-issue13-release-readiness.md)에서 확인한다.
+사용자는 **Free로 Private 전환, 보호 제한 수용·수동 배포**를 선택했다.
+개발 저장소는 Private로 전환했고 공개 `heiccy`는 Public으로 유지한다.
+기존 `main` 보호 규칙과 `public-release` environment는 Free Private에서
+강제되는 보호 장치로 취급하지 않는다. 전환 전 설정은 로컬에 백업했다.
+PR #16은 사용자가 직접 검토·머지한다.
+
+자동 게시 변수는 `HEICCY_RELEASE_ENABLED=false`로 유지한다. environment secret
+`HEICCY_RELEASE_TOKEN`은 API로 삭제 확인했고, 사용자는 `heiccy-release` PAT를
+직접 삭제했다고 확인했다. 새 토큰을 만들지 않고 로그인된 GitHub CLI로
+[수동 릴리스 절차](macos-manual-release.md)를 수행한다. main 머지 전에는
+개발·공개 태그나 릴리스를 생성하지 않는다. 실제 완료 범위는
+[이슈 #13 검증 기록](macos-issue13-release-readiness.md)에서 확인한다.
 
 CI artifact의 다운로드·SHA-256 대조·설치 검증은 빌드 산출물의 검증이다.
 GitHub Releases에 설치 파일을 공개했거나 비인증 사용자가 공개 DMG를 내려받아
-설치할 수 있음을 확인한 결과로 기록하지 않는다. 공개 다운로드 검증은 게시가
-별도로 승인되고 실제 릴리스가 공개된 뒤 수행한다.
+설치할 수 있음을 확인한 결과로 기록하지 않는다. 공개 다운로드 검증은 실제
+릴리스가 공개된 뒤 수행한다.
 
 GitHub Free의 Private 저장소에서는 현재 보호 설정을 그대로 사용할 수 없다.
 
@@ -42,15 +48,16 @@ GitHub Free의 Private 저장소에서는 현재 보호 설정을 그대로 사�
 
 ## 릴리스 순서
 
-다음은 정상 릴리스 흐름이며 현재 보류한 작업의 실행 승인을 뜻하지 않는다.
-게시·머지·Private 전환은 별도 승인 후 재개한다. Private 전환은 아래 공개 배포 확인과
-함께 필요한 브랜치·environment 보호 기능의 플랜 지원 여부도 충족해야 한다.
+현재는 수동 릴리스 흐름을 사용한다. 개발 저장소의 Private 전환을 먼저 수행하는
+순서 변경과 Free의 보호 제한은 사용자 선택으로 확정했다. PR 머지는 사용자가
+수행하고 이후 아래 절차로 태그 CI·공개 산출물을 검증한다.
 
 1. 개발 PR을 검토하고 `main`에 반영한다. Python·Swift·worker·패널·DMG·배포 파일을
-   macOS 15·26에서 검증한다. 보호 브랜치 머지는 별도로 수행한다.
+   macOS 15·26에서 검증한다. PR 머지는 사용자가 수행한다.
 2. `Info.plist`와 릴리스 노트를 확인하고 개발 커밋에 `macos-v1.0.0` 태그를 붙인다.
    Python 태그 `v<Python 버전>`은 앱 게시를 실행하지 않는다.
-3. 태그 실행에서 두 OS 검증을 모두 통과해야 게시 job이 시작된다. macOS 15 artifact의
+3. 태그 실행에서 두 OS 검증을 모두 통과했는지 수동으로 확인한다. 자동 게시 job은
+   비활성 상태로 유지한다. macOS 15 artifact의
    DMG를 선택하고 재빌드하지 않는다. macOS 26 artifact는 별도 검증 자료로 보존한다.
 4. 선택한 artifact의 커밋·앱 버전·파일명·SHA-256을 검증한다. 공개 소스는 태그 커밋의
    허용 목록에서 추출하므로 작업 폴더·미추적 파일이 섞이지 않는다.
@@ -60,11 +67,16 @@ GitHub Free의 Private 저장소에서는 현재 보호 설정을 그대로 사�
    기존 태그·릴리스·산출물은 덮어쓰지 않는다. 실패한 초안은 내용을 확인한 뒤 복구한다.
 7. 초안에서 받아 SHA-256·Applications 설치·첫 실행·핵심 변환·기존 설정 승계를 확인하고
    공개한다. 비인증 다운로드와 문서 링크를 다시 확인한다.
-8. 공개 배포가 정상 동작한 다음에만 개발 저장소를 Private로 전환하고 권한·CI를 재검증한다.
+8. 이미 Private로 전환한 개발 저장소의 비인증 접근 차단·CI와 공개 다운로드 경로를
+   재확인하고 #13의 남은 완료 기준을 기록한다.
 
-## 게시 인증
+## 게시 인증과 선택적 자동 게시
 
-자체 `GITHUB_TOKEN`은 개발 저장소 artifact 조회에 사용한다. 공개 저장소 쓰기에는
+현재 수동 게시에는 로그인된 `gh` 인증을 사용한다. CLI 인증을 CI secret에 복사하거나
+토큰을 출력하지 않는다. 공개 저장소에 쓸 수 있는 권한은 실제 조회·게시 결과로 확인한다.
+
+기존 자동 게시 구현은 비활성 상태로 보존한다. 이를 나중에 활성화하려면 자체
+`GITHUB_TOKEN`은 개발 저장소 artifact 조회에 사용하고, 공개 저장소 쓰기에는
 `public-release` environment의 `HEICCY_RELEASE_TOKEN`이 필요하다. 대상 `heiccy`만
 선택한 fine-grained PAT의 `Contents: read and write` 또는 같은 권한의 GitHub App을
 사용한다. 현재 로컬 CLI의 넓은 OAuth 토큰을 CI secret으로 재사용하지 않는다.
@@ -123,6 +135,6 @@ sdist `PKG-INFO`의 영어 Summary·설명·버전·포함 목록을 검증한�
 - 계정 플랜에 따른 branch protection·environment·Actions 요금과 분 제한 변화를 확인한다.
 - 로컬 개발 `origin`은 기존 저장소를 유지하고 공개 저장소는 별도 checkout을 사용한다.
 - 비인증 접근에서 기존 코드·이슈·PR이 차단되고 새 README·태그·설치 파일이 열리는지
-  확인한다. Private 전환 후 두 OS CI와 게시 토큰을 재검증한다.
+  확인한다. Private 전환 후 두 OS CI와 수동 CLI 게시 권한을 재검증한다.
 
 실제 완료 여부는 [이슈 #13 검증 기록](macos-issue13-release-readiness.md)에 남긴다.

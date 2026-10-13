@@ -8,13 +8,15 @@
   개발 태그 `macos-v1.0.0`과 Python 태그 `v<Python 버전>`은 구분한다.
 - 앱 1.0.0과 Python 0.3.0의 릴리스는 독립적이다. PyPI 이름과 실행 명령은 유지한다.
 - ad-hoc 서명과 미공증 첫 실행 안내를 제공한다. Developer ID·Apple 공증은 미적용이다.
-- 사용자가 **GitHub Releases에 DMG 게시를 제외하고 나머지 검증**을 요청했다.
-  게시 변수는 `HEICCY_RELEASE_ENABLED=false`로 유지한다. 태그·초안 릴리스도 만들지 않는다.
-- 사용자는 계정 플랜이 GitHub Free임을 확인한 뒤
-  **Private 전환 보류, 나머지 검증 완료**를 선택했다. 기존 개발 저장소는 Public이며
-  main 보호 규칙과 `public-release` environment를 유지한다. 설정은 로컬에 백업했다.
+- 사용자는 남은 작업을 재개하고 **Free로 Private 전환, 보호 제한 수용·수동 배포**를
+  선택했다. 개발 저장소는 Private로 전환했고 공개 `heiccy`는 Public이다.
+  main 보호 규칙·`public-release` environment의 Free Private 제한을 수용한다.
+  전환 전 설정은 로컬에 백업했다.
+- `HEICCY_RELEASE_ENABLED=false`를 유지하고 `HEICCY_RELEASE_TOKEN` secret을 삭제했다.
+  사용자는 `heiccy-release` PAT를 직접 삭제했다고 확인했다. 로그인된 GitHub CLI로
+  수동 배포하며, main 머지 전에는 개발·공개 태그와 초안 릴리스를 만들지 않는다.
 - PR #16은 사용자가 직접 검토·머지한다. #5는 완료 범위에 맞춰 `Closes #5`,
-  #13은 게시·Private 전환 검증이 남으므로 `Refs #13`을 유지한다.
+  #13은 태그 CI·게시·공개 다운로드 검증이 남으므로 `Refs #13`을 유지한다.
 
 ## 요구사항별 상태
 
@@ -23,12 +25,12 @@
 | 채널·저장소·이전 정책 | GitHub Releases, 공개 `heiccy`, 별도 소스 이력, 독립 PyPI 운영 확정 | 없음 |
 | 소스·라이선스 이전 | 공개 소스·영문 LICENSE·한국어 이용 조건·제3자 고지·대응 소스 수집 구현. 내부 workflow·사진·개발 문서 제외 | 새 문서 변경의 공개 소스 동기화 결과는 PR에서 기록 |
 | 버전·메뉴·아이콘·설정 | 앱 1.0.0·Python 0.3.0, #5 실기 범위, CI 설치본의 실제 변환·Applications 교체·설정 승계 확인 | 이번 CI 설치본 자체의 메뉴바 좌·우 클릭은 미검증. 기존 빌드 사용자 확인과 구분 |
-| 자동 게시 workflow | macOS 15·26 검증, macOS 15 원본 선택, manifest·SHA 검사, main 포함·태그·권한 제한 구현 | 실제 게시 토큰 사용·태그 실행·Private 상태의 동작 미검증 |
+| CI와 수동 게시 | macOS 15·26 검증, macOS 15 원본 선택, manifest·SHA 검사, main 포함·태그 검사 구현. 수동 CLI 절차 작성, 자동 게시 비활성 | main 머지 후 실제 태그 실행·CLI 초안 생성과 공개 게시 미검증 |
 | README·첫 실행·릴리스 노트 | 영어·한국어 앱 안내, macOS 15+ arm64, ad-hoc·미공증·업데이트 안내 작성 | 공개 릴리스 다운로드와 Gatekeeper 차단·허용 실기 미검증 |
 | 공개 URL·기존 CLI | 새 안내·메타데이터의 공개 URL, 기존 로컬 origin·CLI 이름 유지 | 이미 게시된 PyPI 0.2.8의 이전 URL은 다음 독립 Python 릴리스 전까지 유지 |
 | PyPI 설명·배포 파일 | 영어 README.pypi.md 분리, wheel METADATA·sdist PKG-INFO 0.3.0과 포함 목록 검사 통과 | 새 Python 버전의 PyPI 업로드는 이번 앱 작업과 별도 |
-| 다운로드·설치·업그레이드 | 인증된 CI artifact의 SHA·/Applications 설치·실행·Finder 실제 변환·구 앱 교체·재실행 통과 | 비인증 공개 DMG 다운로드와 브라우저 격리 속성을 포함한 첫 실행은 게시 보류로 미검증 |
-| Private 전환 | Free 플랜의 보호 규칙·environment 제약 확인 및 설정 백업 | 사용자의 선택으로 전환과 전환 후 접근 차단·CI 검증 보류 |
+| 다운로드·설치·업그레이드 | 인증된 CI artifact의 SHA·/Applications 설치·실행·Finder 실제 변환·구 앱 교체·재실행 통과 | 비인증 공개 DMG 다운로드와 브라우저 격리 속성을 포함한 첫 실행은 게시 전으로 미검증 |
+| Private 전환 | Free 제약 수용·설정 백업·Private 전환 완료. 비인증 개발 코드·이슈·PR HTTP 404, 공개 소스 HTTP 200 | 전환 후 최신 통합 커밋의 macOS 15·26 CI와 공개 DMG 경로 검증 예정 |
 
 ## CI 산출물의 출처와 자동 검사
 
@@ -96,15 +98,23 @@ Gatekeeper 차단·확인 없이 열기 경로는 검증하지 않았다. 이 �
 현재 게시된 PyPI 0.2.8의 wheel·sdist는 비인증 다운로드와 SHA-256 검사를 통과했다.
 그러나 Homepage·Repository·Issues는 이전 개발 저장소를 가리킨다. 새 0.3.0 소스
 메타데이터는 이미 공개 URL을 사용하며 기존 버전의 URL에 소급 적용되지 않는다.
-Private 전환을 보류했으므로 현재 이전 URL도 계속 접근할 수 있다.
+Private 전환 후 이전 개발 저장소 URL은 비인증 사용자에게 HTTP 404다.
+기존 PyPI 버전의 오래된 링크는 변경할 수 없으며 새 독립 Python 릴리스에서 갱신한다.
 
 GitHub Free에서는 Private 저장소의 보호 규칙과 environment를 현재 방식으로
-유지할 수 없다. 사용자 선택에 따라 Public 상태와 기존 보호를 유지했으며,
-비인증 기존 이슈·PR 접근 차단이나 Private CI 성공을 완료로 표시하지 않는다.
-근거와 재개 순서는 [운영 문서](macos-build-release.md)에 기록한다.
+유지할 수 없다. 사용자가 이 제한을 수용해 개발 저장소를 Private로 전환했다.
+API의 private=true·visibility=private와 공개 저장소의 private=false를 확인했다.
+Authorization 헤더 없는 요청에서 개발 저장소·이슈 #13·PR #16·raw README·저장소
+API가 모두 HTTP 404였고, 공개 저장소·raw README·SOURCE.json은 HTTP 200이었다.
+Private 전환 후 CI 성공과 공개 DMG 다운로드는 각각 검증한 뒤 기록한다.
+근거와 수동 배포 순서는 [운영 문서](macos-build-release.md)와
+[수동 릴리스 절차](macos-manual-release.md)에 기록한다.
 
 ## 앞선 검증 이력
 
+- main의 PR #17 통합 후 Python 전체 433건·Ruff 0.14.4·diff 공백 검사 통과.
+  공개 훅의 실제 설치·메시지 차단, 커밋 내용·실행 권한·해시 보존을 포함한다.
+  workflow·릴리스 운영 문서의 충돌 두 곳을 해소하고 기존 push·PR CI 트리거를 유지했다.
 - Python 295건·Swift ConverterKit 76건·앱 XCTest 직접 실행 47건·클립보드 진단 14건 통과.
 - Ruff 0.14.4, wheel/sdist 0.3.0의 영어 Summary·설명·허용 목록 검사 통과.
 - sdist 내부 검사 111건 통과·66건 skip, 최초 공개 소스 snapshot 테스트 281건 통과.
@@ -112,15 +122,17 @@ GitHub Free에서는 Private 저장소의 보호 규칙과 environment를 현재
   동일 wheel 재빌드·수정 라이브러리 교체 및 전체 런타임 라이선스 검증은 미완료다.
 - 공개 root commit `3685491`에서 109개 파일과 SOURCE.json을 게시한 뒤 `c62154d`에서
   공개 문서 링크를 보완했다. 과거 커밋의 파일 수와 출처 SHA는 당시 기록이다.
-- 사용자가 토큰 등록 완료를 알렸고 API에서 environment secret 이름
+- 과거 사용자가 토큰 등록 완료를 알렸고 API에서 environment secret 이름
   `HEICCY_RELEASE_TOKEN`의 존재만 확인했다. 값은 읽거나 출력하지 않았다.
 - 게시 변수는 초기에 `true`였으나 사용자 보류 지시 후 `false`로 바꿨다.
   현재 상태는 위 결정 사항을 따른다.
+- Private 전환 전에 environment secret을 삭제하고 API에서 빈 목록을 확인했다.
+  PAT 삭제 자체는 사용자 확인이며 자동 검증 결과로 바꾸지 않는다.
 - #5의 밝은·어두운 패널·아이콘·사용자 메뉴바 확인·이름 조사·설정 승계와 한계는
   [브랜딩 검증 문서](macos-branding.md)에서 독립적으로 관리한다.
 - 이번 문서 갱신 후 공개 exporter·릴리스·패키징 회귀 검사 122건,
   로컬 문서 링크 38개와 실제 캡처·렌더 PNG 12개 해시 검사를 통과했다.
 
 로그·DMG·개인 기본설정 백업·진단 스냅샷·구 앱 백업은 Git에 추가하지 않는다.
-DMG 게시·공개 다운로드·Private 전환을 재개하기 전에는 원격 상태와 플랜·권한을
-다시 확인하고 해당 경로를 실제 검증한다.
+DMG 게시·공개 다운로드 전에는 원격 상태와 권한을 다시 확인하고 해당 경로를
+실제 검증한다. 개발 저장소 Private 전환 자체는 완료했다.
