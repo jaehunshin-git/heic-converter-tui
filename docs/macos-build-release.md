@@ -13,7 +13,38 @@
 [코덱 대응 소스 안내](third-party-sources.md)에서 관리한다.
 공개 exporter는 이 문서와 과거 내부 검증 기록을 복사하지 않는다.
 
+## 현재 선택과 보류 상태 (2026-10-13)
+
+사용자는 계정 플랜이 GitHub Free임을 확인하고
+**Private 전환 보류, 나머지 검증 완료 (권장)**를 선택했다. 현재 자동 게시 변수는
+`HEICCY_RELEASE_ENABLED=false`이며 DMG 게시·PR #16 머지·개발 저장소의 Private 전환을 모두 보류한다.
+개발 저장소는 Public 상태를 유지하고 기존 `main` 브랜치 보호와 `public-release`
+environment의 보호 설정을 유지한다. 설치 실기와 나머지 검증은 진행하되 실제
+완료 여부는 [이슈 #13 검증 기록](macos-issue13-release-readiness.md)에서 확인한다.
+
+CI artifact의 다운로드·SHA-256 대조·설치 검증은 빌드 산출물의 검증이다.
+GitHub Releases에 설치 파일을 공개했거나 비인증 사용자가 공개 DMG를 내려받아
+설치할 수 있음을 확인한 결과로 기록하지 않는다. 공개 다운로드 검증은 게시가
+별도로 승인되고 실제 릴리스가 공개된 뒤 수행한다.
+
+GitHub Free의 Private 저장소에서는 현재 보호 설정을 그대로 사용할 수 없다.
+
+- [브랜치 보호 지원 범위](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches):
+  Free는 Public 저장소에서 지원한다. Private 저장소의 branch protection은
+  Pro·Team·Enterprise에서 지원한다.
+- [environment 관리와 공개 범위 변경](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments):
+  Free에서 Public 저장소를 Private로 바꾸면 기존 environment 보호 규칙과
+  environment secrets가 무시되고 environment를 설정할 수 없다. Private 저장소의
+  environment·secrets·배포 브랜치 제한에는 Pro·Team·Enterprise가 필요하다.
+- [보호 규칙별 지원 범위](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments):
+  required reviewers와 wait timer는 Free·Pro·Team에서도 Public 저장소에만 제공된다.
+  플랜 변경만으로 Private 저장소의 모든 보호 기능이 유지된다고 판단하지 않는다.
+
 ## 릴리스 순서
+
+다음은 정상 릴리스 흐름이며 현재 보류한 작업의 실행 승인을 뜻하지 않는다.
+게시·머지·Private 전환은 별도 승인 후 재개한다. Private 전환은 아래 공개 배포 확인과
+함께 필요한 브랜치·environment 보호 기능의 플랜 지원 여부도 충족해야 한다.
 
 1. 개발 PR을 검토하고 `main`에 반영한다. Python·Swift·worker·패널·DMG·배포 파일을
    macOS 15·26에서 검증한다. 보호 브랜치 머지는 별도로 수행한다.

@@ -336,6 +336,36 @@ legacy `clipboardEnabled` 필드는 보존하지만 실행 중 자동 변환은 
 `/Applications`의 원본 앱 교체, 공개 DMG 다운로드·격리 속성·Gatekeeper 첫 실행까지
 검증한 것은 아니다. 해당 정식 배포·설치 경로는 #13의 남은 범위로 유지한다.
 
+### CI DMG의 Applications 설치·교체 추가 검증 (2026-10-13)
+
+이후 #13에서 macOS 15 CI 실행 `38372615579`의 원본 DMG를 인증된 GitHub CLI로
+내려받았다. 빌드 출처는 PR 검증용 합성 커밋 `db06939`이며 브랜치 HEAD `4f0a0ab`과
+트리가 동일하다. 이전 절의 로컬 빌드 `1e0efb2`와 다른 실행 파일이므로 별도 근거로
+기록한다. 두 OS CI·manifest·SHA와 자동 설치 검사를 통과한 뒤 다음 실기를 수행했다.
+
+- 실제 `/Applications/heiccy.app` 설치본에서 패널·설정 창과 AX 이름을 확인했다.
+- Finder에서 합성 HEIC를 복사해 자동 JPEG 변환 완료를 관찰하고, 빈 검증 폴더에
+  실제 붙여넣기 후 JPEG 24×16 디코딩을 확인했다.
+- 구 앱 0.3.0의 복사본을 `/Applications/HEIC Converter.app`에 설치해 설정을 확인하고
+  정상 종료·백업한 뒤 CI 앱 1.0.0으로 교체했다. 교체·정상 종료·재실행 후 같은 옵션과
+  기존 사용자 도메인의 전체 저장 바이트가 유지됐다. 원래 개발 폴더의 앱은 보존했다.
+- 검증 전 클립보드는 저장소 밖 비공개 스냅샷에 보존하고, 정상 종료의 원본 복구와
+  진단 CLI의 세대 검사·복구·`compare equal`로 항목·타입·바이트 보존을 확인했다.
+
+[CI 설치 증거와 실제 창 5개](assets/branding/verification/2026-10-13-ci-install/evidence.json),
+[교체 전 구 앱](assets/branding/verification/2026-10-13-ci-install/settings-legacy-applications-2x.png),
+[교체 후 CI 앱](assets/branding/verification/2026-10-13-ci-install/settings-upgraded-applications-2x.png),
+[실제 Finder 변환 완료](assets/branding/verification/2026-10-13-ci-install/finder-conversion-installed-2x.png)에
+대상과 결과를 기록했다. 자세한 절차·체크섬은 [#13 검증 기록](macos-issue13-release-readiness.md)에 있다.
+
+실기 환경은 로컬 macOS 27.2·어두운 외관·Retina 2x다. macOS 15 빌드와 macOS 15
+실기는 구분한다. 검증 시작 시 Applications에 기존 앱이 없었으므로 사용자 설치
+원본을 덮어쓴 검증이 아니라 보존한 구 앱 복사본의 설치 교체다. CLI 다운로드에는
+격리 속성이 없었고 Gatekeeper 차단·허용, 비인증 공개 DMG 다운로드, 이번 CI
+설치본의 상태 아이콘 좌·우 클릭은 미검증이다. 기존 빌드에 대한 사용자의 밝은·어두운
+메뉴바 확인 범위를 새 설치본까지 확대하지 않는다. DMG 게시와 GitHub Free의
+Private 전환은 사용자 선택으로 보류했으며 #13의 해당 완료 기준은 남아 있다.
+
 ### 이름 중복과 혼동 가능성
 
 2026-10-13에 정확한 철자 `heiccy`를 공개 웹 검색, 인증된 GitHub 저장소 이름 검색,
@@ -366,12 +396,12 @@ legacy `clipboardEnabled` 필드는 보존하지만 실행 중 자동 변환은 
 | 밝은/어두운·Retina·작은 메뉴 아이콘 | 1x·2x 렌더 + 밝은·어두운 Retina 메뉴바의 사용자 직접 확인 |
 | 표시 이름·README·DMG·파일명 | PR #14와 #13의 1.0.0 산출물·문서 검증 |
 | 번들 ID·설정 저장소·마이그레이션 | 기존 도메인·필드 유지, 선택 테스트와 구 코드/새 코드 격리 검사 |
-| 설치 업그레이드·서명·산출물·UI 접근성 이름 | 임시 설치 경로의 실제 앱 교체·실제 사용자 설정 승계, 서명·DMG 검증, 패널·설정의 실제 AX 이름과 상태 아이콘의 코드/테스트 검사 |
+| 설치 업그레이드·서명·산출물·UI 접근성 이름 | 임시 설치 경로 및 Applications 구 앱 복사본의 CI 앱 교체·실제 사용자 설정 승계, 서명·DMG 검증, 패널·설정의 실제 AX 이름과 상태 아이콘의 코드/테스트 검사 |
 
 완료는 위에 명시한 로컬 환경과 사용자 확인 범위에 한정한다. 시스템 상태 아이콘의
 AX 트리·VoiceOver 발화, 1x 실제 디스플레이는 확인하지 않았으며 완료로 표시하지 않는다.
 
-#13은 독립 범위인 공개 배포·다운로드·설치 및 Private 전환 후 재검증이 남아 있다.
+#13은 독립 범위인 공개 배포·공개 DMG 다운로드와 설치 및 Private 전환 후 재검증이 남아 있다.
 자동 배포는 `HEICCY_RELEASE_ENABLED=false`로 보류하며 `Refs #13`을 유지한다.
 이번 브랜딩 검증으로 #5의 완료 연결을 준비했으며, #13의 정식 배포를 완료한 것은 아니다.
 
