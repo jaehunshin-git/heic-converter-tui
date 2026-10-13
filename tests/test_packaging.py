@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tarfile
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -41,9 +42,9 @@ def package_metadata(body, *, newline="\n", summary="Local HEIC converter"):
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_current_english_readme_passes_with_exact_ui_quotes(newline):
+def test_pypi_readme_passes_english_metadata_validation(newline):
     validator.metadata(
-        package_metadata((ROOT / "README.md").read_text(), newline=newline)
+        package_metadata((ROOT / "README.pypi.md").read_text(), newline=newline)
     )
 
 
@@ -151,14 +152,49 @@ def test_changed_upstream_notice_fails_instead_of_shipping_old_links():
         )
 
 
-@pytest.mark.parametrize("name", ["README.md", "README.ko.md"])
-def test_build_instructions_use_absolute_url_for_excluded_sdist_docs(name):
-    readme = (ROOT / name).read_text()
-    assert "](docs/macos-build-release.md)" not in readme
-    assert (
-        "https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md"
-        in readme
-    )
+def test_pypi_description_and_sdist_use_dedicated_readme():
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = config["project"]
+    assert project["name"] == "heic-converter-tui"
+    assert project["version"] == "0.3.0"
+    assert project["scripts"] == {"heic-converter": "heic_converter.cli:run"}
+    assert project["readme"] == "README.pypi.md"
+    assert project["urls"] == {
+        "Repository": "https://github.com/jaehunshin-git/heiccy",
+        "Homepage": "https://github.com/jaehunshin-git/heiccy",
+        "Issues": "https://github.com/jaehunshin-git/heiccy/issues",
+    }
+    assert config["tool"]["hatch"]["build"]["targets"]["sdist"]["only-include"] == [
+        "src", "tests", "pyproject.toml", "README.pypi.md", "LICENSE",
+    ]
+
+
+def test_pypi_readme_links_to_public_repository_without_app_installation():
+    readme = (ROOT / "README.pypi.md").read_text()
+    assert "https://github.com/jaehunshin-git/heiccy" in readme
+    assert "https://github.com/jaehunshin-git/heic-converter-tui" not in readme
+    assert "](LICENSE)" not in readme
+    assert "](docs/" not in readme
+    assert ".dmg" not in readme.lower()
+    assert ".app" not in readme.lower()
+
+
+@pytest.mark.parametrize("name", ["README.pypi.md", "README.md", "README.ko.md", "input/photo.heic"])
+def test_sdist_description_allowlist(tmp_path, monkeypatch, name):
+    contents = package_metadata((ROOT / "README.pypi.md").read_text())
+    with zipfile.ZipFile(tmp_path / "heic_converter_tui-0.3.0-py3-none-any.whl", "w") as archive:
+        archive.writestr("heic_converter_tui-0.3.0.dist-info/METADATA", contents)
+    with tarfile.open(tmp_path / "heic_converter_tui-0.3.0.tar.gz", "w:gz") as archive:
+        for filename, body in [("PKG-INFO", contents), (name, b"fixture")]:
+            info = tarfile.TarInfo(f"heic_converter_tui-0.3.0/{filename}")
+            info.size = len(body)
+            archive.addfile(info, io.BytesIO(body))
+    monkeypatch.setattr(sys, "argv", ["validate_python_dist.py", str(tmp_path)])
+    if name == "README.pypi.md":
+        validator.main()
+    else:
+        with pytest.raises(AssertionError):
+            validator.main()
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 # macOS 앱 빌드와 패키징
 
-macOS 앱의 표시 이름은 **heiccy**다. Apple Silicon arm64, macOS 15 이상이 대상이며 기능 버전은 0.3.0이다. 실행 시 사용자의 Python, Homebrew, uv 또는 pip를 호출하지 않는다. Swift 실행 파일이 `Contents/Resources/worker/heic-worker`를 `Process`로 직접 실행한다.
+macOS 앱의 표시 이름은 **heiccy**다. Apple Silicon arm64, macOS 15 이상이 대상이며 앱 버전은 1.0.0이다. 실행 시 사용자의 Python, Homebrew, uv 또는 pip를 호출하지 않는다. Swift 실행 파일이 `Contents/Resources/worker/heic-worker`를 `Process`로 직접 실행한다.
 
 ## 고정 환경
 
@@ -36,26 +36,26 @@ DMG 생성의 최종 오류가 `hdiutil: create failed - Resource busy`인 경�
 산출물은 다음과 같다. 앱 표시 이름과 패널 이름은 `heiccy`이며, 내부 실행 파일 `HEICConverter`와 번들 ID `io.github.jaehunshin-git.heic-converter`는 유지한다. PyPI 패키지·CLI 이름과 기존 `~/Pictures/HEIC Converter` 출력 폴더도 유지한다.
 
 - `dist/macos/heiccy.app`
-- `dist/macos/heiccy-0.3.0-arm64.dmg`
-- `dist/macos/heiccy-0.3.0-arm64.dmg.sha256`
+- `dist/macos/heiccy-1.0.0-arm64.dmg`
+- `dist/macos/heiccy-1.0.0-arm64.dmg.sha256`
 
 별도 검증은 다음 명령으로 재실행할 수 있다.
 
 ```sh
 .venv-app-build/bin/python packaging/macos/validate_app.py 'dist/macos/heiccy.app'
 .venv-app-build/bin/python packaging/macos/test_panel_startup.py 'dist/macos/heiccy.app'
-.venv-app-build/bin/python packaging/macos/validate_dmg.py dist/macos/heiccy-0.3.0-arm64.dmg
+.venv-app-build/bin/python packaging/macos/validate_dmg.py dist/macos/heiccy-1.0.0-arm64.dmg
 .venv-app-build/bin/python -m build --no-isolation
 .venv-app-build/bin/python packaging/macos/validate_python_dist.py dist
 ```
 
-wheel과 sdist는 버전 0.3.0, 지정 경로 허용 목록, 영어 Summary와 README 본문을 검사한다. Hatch가 자동 포함하는 루트 `.gitignore`와 `PKG-INFO`는 sdist 허용 목록에 포함한다. 사진, 개발 환경, Swift 앱 소스와 패키징 소스는 Python 배포 파일에 포함하지 않는다.
+wheel과 sdist는 버전 0.3.0, 지정 경로 허용 목록, 영어 Summary와 README.pypi.md 본문을 검사한다. Hatch가 자동 포함하는 루트 `.gitignore`와 `PKG-INFO`는 sdist 허용 목록에 포함한다. 사진, 개발 환경, Swift 앱 소스와 패키징 소스는 Python 배포 파일에 포함하지 않는다.
 
 ## 설치와 배포
 
 DMG를 열고 heiccy를 Applications로 드래그한다. 첫 실행이 차단되면 한 번 실행을 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안 → 확인 없이 열기로 허용한다. ad-hoc 서명과 DMG는 Developer ID 서명·공증이나 Gatekeeper 신뢰를 제공하지 않는다. 이 버전은 Developer ID 서명과 공증을 수행하지 않는다.
 
-`.github/workflows/macos.yml`은 Apple Silicon `macos-15`와 `macos-26`에서 Python 검사, Swift 검사, 앱/worker/DMG 설치본 실행과 Python 배포 파일 검증 후 CI 아티팩트를 업로드한다. PR에서 릴리스를 게시하거나 main에 머지하지 않는다. 앱 버전은 `Info.plist`, Python 버전은 `pyproject.toml`에서 독립적으로 관리한다. 배포 담당자는 앱 전용 `macos-v<앱 버전>` 태그의 검증한 DMG·체크섬을 GitHub Releases에 게시한다. Python 릴리스는 별도의 `v<Python 버전>` 태그와 wheel·sdist로 PyPI에 게시하며 앱 전용 변경은 PyPI에 업로드하지 않는다. 이미 게시된 PyPI 메타데이터를 덮어쓰지 않는다.
+`.github/workflows/macos.yml`은 macOS 15·26에서 검증합니다. 개발 태그 `macos-v<앱 버전>` 실행은 두 OS 성공 후 공개 `heiccy` 저장소에 소스 사본과 `v<앱 버전>` 초안 릴리스를 만듭니다. 공개 게시와 설치 확인 후에만 개발 저장소를 Private로 전환합니다. Python 태그 `v<Python 버전>`은 별도이며 앱 배포가 PyPI 업로드를 실행하지 않습니다. 게시 인증과 복구 절차는 개발 저장소의 `docs/macos-build-release.md`에서 관리합니다.
 
 자동 smoke 검증은 설치한 worker의 실제 변환과 앱의 프로토콜 연결을 확인한다. 이름 있는 pasteboard에서 자동 변환·혼합 항목 보존·부분 실패·끄기·정상 종료 복구와 패널/설정 창도 smoke로 확인한다. Photos·Finder·카카오톡의 실제 붙여넣기와 접근 권한 검증은 별도로 수행한다. 로컬 OS에서 성공한 결과를 macOS 15 실기 검증으로 기록하지 않는다.
 
