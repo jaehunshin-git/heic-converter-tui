@@ -22,6 +22,7 @@ def validate(app: Path) -> None:
     version = source_info["CFBundleShortVersionString"]
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert info["CFBundleIdentifier"] == "io.github.jaehunshin-git.heic-converter"
+    assert info["CFBundleName"] == info["CFBundleDisplayName"] == "heiccy"
     assert (
         info["CFBundleShortVersionString"]
         == info["CFBundleVersion"]

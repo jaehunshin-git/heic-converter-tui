@@ -12,20 +12,32 @@ from smoke_worker import smoke
 from validate_app import validate
 
 
-def run_hdiutil(*arguments: str) -> subprocess.CompletedProcess:
+def run_dmg_command(program: str, *arguments: str) -> subprocess.CompletedProcess:
     """출력을 plist 파싱과 분리해 기록하고, 실패 코드는 그대로 전파합니다."""
-    command = ["hdiutil", *arguments]
+    command = [program, *arguments]
     print(f"DMG 명령: {shlex.join(command)}", file=sys.stderr, flush=True)
     result = subprocess.run(command, capture_output=True, check=False)
     print(f"DMG 명령 종료 코드: {result.returncode}", file=sys.stderr, flush=True)
     for name, contents in (("stdout", result.stdout), ("stderr", result.stderr)):
         print(
-            f"hdiutil {name}:\n{contents.decode('utf-8', errors='replace') or '(출력 없음)'}",
+            f"{program} {name}:\n{contents.decode('utf-8', errors='replace') or '(출력 없음)'}",
             file=sys.stderr,
             flush=True,
         )
     result.check_returncode()
     return result
+
+
+def run_hdiutil(*arguments: str) -> subprocess.CompletedProcess:
+    return run_dmg_command("hdiutil", *arguments)
+
+
+def verify_volume_name(mount: Path) -> None:
+    """강제 마운트 경로 대신 실제 볼륨 메타데이터의 이름을 확인합니다."""
+    result = run_dmg_command("diskutil", "info", "-plist", str(mount))
+    name = plistlib.loads(result.stdout).get("VolumeName")
+    if name != "heiccy":
+        raise ValueError(f"DMG 볼륨 이름 불일치: 예상 'heiccy', 실제 {name!r}")
 
 
 def verify_image(dmg: Path) -> None:
@@ -61,8 +73,9 @@ def main() -> None:
         devices = plistlib.loads(result.stdout)["system-entities"]
         device = next(item["dev-entry"] for item in devices if "mount-point" in item)
         try:
+            verify_volume_name(mount)
             assert {path.name for path in mount.iterdir()} == {
-                "HEIC Converter.app",
+                "heiccy.app",
                 "Applications",
             }
             shortcut = mount / "Applications"
@@ -70,9 +83,9 @@ def main() -> None:
                 "/Applications"
             )
             # DMG에서 설치한 복사본은 개발 폴더 밖에서도 실행 가능해야 한다.
-            installed = Path(temporary) / "HEIC Converter.app"
+            installed = Path(temporary) / "heiccy.app"
             subprocess.run(
-                ["ditto", str(mount / "HEIC Converter.app"), str(installed)], check=True
+                ["ditto", str(mount / "heiccy.app"), str(installed)], check=True
             )
             validate(installed)
             smoke(installed / "Contents/Resources/worker/heic-worker")

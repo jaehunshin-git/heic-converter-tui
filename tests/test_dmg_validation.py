@@ -94,7 +94,7 @@ def test_installation_parses_plist_runs_checks_and_detaches(
         if command[:2] == ["hdiutil", "attach"]:
             mount = Path(command[command.index("-mountpoint") + 1])
             mount.mkdir()
-            (mount / "HEIC Converter.app").mkdir()
+            (mount / "heiccy.app").mkdir()
             (mount / "Applications").symlink_to("/Applications")
             contents = plistlib.dumps(
                 {
@@ -106,10 +106,21 @@ def test_installation_parses_plist_runs_checks_and_detaches(
             return subprocess.CompletedProcess(command, 0, contents, b"attach notice\n")
         if command[0] == "ditto":
             Path(command[2]).mkdir()
+        if command[:3] == ["diskutil", "info", "-plist"]:
+            assert kwargs == {"capture_output": True, "check": False}
+            contents = plistlib.dumps(
+                {
+                    "DeviceIdentifier": "disk42",
+                    "MountPoint": command[3],
+                    "VolumeName": "heiccy",
+                }
+            )
+            return subprocess.CompletedProcess(command, 0, contents, b"volume notice\n")
         return subprocess.CompletedProcess(command, 0, b"verified\n", b"")
 
     def validate(app):
         checks.append("app")
+        assert app.name == "heiccy.app"
         assert app.is_dir()
         if installed_failure:
             raise ValueError("installed app invalid")
@@ -128,6 +139,70 @@ def test_installation_parses_plist_runs_checks_and_detaches(
         app_command = next(command for command in calls if "--smoke-test" in command)
         assert app_command[0].endswith("Contents/MacOS/HEICConverter")
     assert calls[-1] == ["hdiutil", "detach", "/dev/disk42"]
+    attach = next(command for command in calls if command[:2] == ["hdiutil", "attach"])
+    mount = attach[attach.index("-mountpoint") + 1]
+    volume_command = ["diskutil", "info", "-plist", mount]
+    ditto = next(command for command in calls if command[0] == "ditto")
+    assert calls.index(attach) < calls.index(volume_command) < calls.index(ditto)
     log = capsys.readouterr()
     assert "attach notice" in log.err
+    assert "diskutil stdout:" in log.err and "volume notice" in log.err
     assert ("DMG SHA-256, Applications" in log.out) is not installed_failure
+
+
+@pytest.mark.parametrize(
+    ("metadata", "returncode", "error", "message"),
+    [
+        ({"VolumeName": "HEIC Converter"}, 0, ValueError, "볼륨 이름 불일치"),
+        ({}, 0, ValueError, "볼륨 이름 불일치"),
+        ({"VolumeName": "heiccy"}, 7, subprocess.CalledProcessError, None),
+        (None, 0, plistlib.InvalidFileException, None),
+    ],
+)
+def test_volume_query_failure_stops_before_installation_and_detaches(
+    validator, dmg, monkeypatch, capsys, metadata, returncode, error, message
+):
+    calls, checks = [], []
+    stdout = plistlib.dumps(metadata) if metadata is not None else b"invalid plist"
+    stderr = b"diskutil diagnostic\n"
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[:2] == ["hdiutil", "attach"]:
+            mount = command[command.index("-mountpoint") + 1]
+            contents = plistlib.dumps(
+                {"system-entities": [{"dev-entry": "/dev/disk42", "mount-point": mount}]}
+            )
+            return subprocess.CompletedProcess(command, 0, contents, b"")
+        if command[0] == "diskutil":
+            assert kwargs == {"capture_output": True, "check": False}
+            return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+        return subprocess.CompletedProcess(command, 0, b"verified\n", b"")
+
+    monkeypatch.setattr(validator.subprocess, "run", run)
+    monkeypatch.setattr(validator, "validate", lambda app: checks.append("app"))
+    monkeypatch.setattr(validator, "smoke", lambda worker: checks.append("worker"))
+    monkeypatch.setattr(sys, "argv", ["validate_dmg.py", str(dmg)])
+    with pytest.raises(error, match=message) as failure:
+        validator.main()
+
+    attach = calls[1]
+    mount = attach[attach.index("-mountpoint") + 1]
+    assert calls == [
+        ["hdiutil", "verify", "-verbose", str(dmg)],
+        attach,
+        ["diskutil", "info", "-plist", mount],
+        ["hdiutil", "detach", "/dev/disk42"],
+    ]
+    assert checks == []
+    if returncode:
+        assert failure.value.returncode == returncode
+        assert failure.value.cmd == calls[2]
+        assert failure.value.stdout == stdout
+        assert failure.value.stderr == stderr
+    log = capsys.readouterr()
+    assert f"DMG 명령 종료 코드: {returncode}" in log.err
+    assert "diskutil stdout:" in log.err
+    assert stdout.decode() in log.err
+    assert "diskutil stderr:\ndiskutil diagnostic" in log.err
+    assert "DMG SHA-256, Applications" not in log.out

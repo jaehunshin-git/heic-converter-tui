@@ -62,10 +62,10 @@ jobs:
       - name: 검증한 산출물 업로드
         uses: actions/upload-artifact@v4
         with:
-          name: heic-converter-${{ matrix.os }}-arm64
+          name: heiccy-${{ matrix.os }}-arm64
           path: |
-            dist/macos/HEIC-Converter-*-arm64.dmg
-            dist/macos/HEIC-Converter-*-arm64.dmg.sha256
+            dist/macos/heiccy-*-arm64.dmg
+            dist/macos/heiccy-*-arm64.dmg.sha256
             dist/*.whl
             dist/*.tar.gz
           if-no-files-found: error
