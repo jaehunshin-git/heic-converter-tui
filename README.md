@@ -270,7 +270,7 @@ bash scripts/install_git_hooks.sh
 ```
 
 The hook blocks invalid titles, declarative prose endings, and malformed footers.
-See [the hook guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/commit-message-hooks.md)
+See [the hook guide](docs/commit-message-hooks.md)
 for rules, limitations, existing hook settings, worktree scope, and uninstall steps.
 Developer hooks are available in source checkouts, outside the PyPI distribution.
 

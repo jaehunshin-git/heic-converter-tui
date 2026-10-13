@@ -1,6 +1,6 @@
 # 커밋 메시지 검사 훅
 
-이슈 [#15](https://github.com/jaehunshin-git/heic-converter-tui/issues/15)의 Commit
+프로젝트의 Commit
 Instructions를 저장소 규칙으로 관리한다. 개인 `~/.codex/config.toml`은 설치와 검사 시
 읽지 않는다. 위반은 경고가 아니라 비정상 종료로 커밋을 차단하며, 메시지를 자동 수정하지
 않는다. 오류에는 행 번호, 원인, 명사형 수정 예시를 표시한다.
