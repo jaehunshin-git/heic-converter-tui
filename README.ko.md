@@ -74,7 +74,7 @@ bash packaging/macos/build.sh
 현재 소스의 산출물은 `dist/macos/heiccy.app`,
 `dist/macos/heiccy-0.3.0-arm64.dmg`와 같은 이름의 `.sha256` 파일입니다.
 고정 빌드 환경과 검증 절차는
-[앱 빌드·배포 안내](docs/macos-build-release.md)를 참고하세요.
+[앱 빌드·배포 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)를 참고하세요.
 
 ## heiccy 사용법
 
@@ -114,9 +114,9 @@ ImageIO 지원에 따라 달라집니다.
 - 수신 앱마다 지원하는 클립보드 표현이 달라 모든 앱에서 모든 항목을 붙여넣을 수
   있다고 보장하지 않습니다.
 
-자세한 동작은 [클립보드 지원 계약](docs/macos-auto-clipboard.md),
+자세한 동작은 [클립보드 지원 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md),
 수신 앱에서 확인한 범위는
-[호환성 검증 기록](docs/macos-issue7-remaining-validation.md)을 참고하세요.
+[호환성 검증 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)을 참고하세요.
 
 ## CLI/TUI
 
@@ -366,11 +366,11 @@ heic-converter-tui/
 
 | 문서 | 내용 |
 | --- | --- |
-| [앱 빌드·배포 안내](docs/macos-build-release.md) | 빌드 환경, 앱·DMG 검증과 배포 절차 |
-| [클립보드 지원 계약](docs/macos-auto-clipboard.md) | 지원 입력, 결과 게시·취소와 정리 정책 |
-| [키보드 접근 검증](docs/macos-issue11-panel-startup.md) | 콜드 스타트 메뉴 진입과 키보드 검증 기록 |
-| [PR #9 검증 기록](docs/macos-issue7-pr-readiness.md) | 당시 클립보드·수신 앱 확인 결과 |
-| [이슈 #7 범위 감사](docs/macos-issue7-scope-audit.md) | 요구사항 변경·검증 범위와 남은 작업 |
+| [앱 빌드·배포 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md) | 빌드 환경, 앱·DMG 검증과 배포 절차 |
+| [클립보드 지원 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md) | 지원 입력, 결과 게시·취소와 정리 정책 |
+| [키보드 접근 검증](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue11-panel-startup.md) | 콜드 스타트 메뉴 진입과 키보드 검증 기록 |
+| [PR #9 검증 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md) | 당시 클립보드·수신 앱 확인 결과 |
+| [이슈 #7 범위 감사](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md) | 요구사항 변경·검증 범위와 남은 작업 |
 | [브랜딩 기록](docs/macos-branding.md) | 확정 이름·자산, 호환성 결정과 검증 기록 |
 | [브랜드 자산 기준](docs/assets/branding/DESIGN.md) | 로고·앱 아이콘·메뉴바 심볼 규격 |
 
