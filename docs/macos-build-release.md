@@ -1,72 +1,52 @@
-# macOS 앱 빌드와 배포
+# heiccy 개발 저장소의 릴리스 운영
 
-macOS 앱의 표시 이름은 **heiccy**이며, 현재 앱과 Python 패키지 버전은 **0.3.0**이다. 앱 버전의 기준은
-`packaging/macos/Info.plist`, Python/PyPI 버전의 기준은 `pyproject.toml`이며 독립적으로 관리한다.
-이슈 #7의 자동 클립보드 기능은 소스 변경이며 아직 릴리스하지 않았다. 이 문서는 배포 절차이며
-버전 태그 생성이나 실제 게시 완료를 뜻하지 않는다. 기능 PR은 main에 머지하지
-않은 상태로 검토한다. 릴리스와 PyPI 게시는 별도의 배포 작업이다.
+## 확정한 정책
 
-## 빌드 환경
+- 개발 기준: `jaehunshin-git/heic-converter-tui`. 내부 이슈·PR과 전체 이력 유지.
+- 공개 저장소: `jaehunshin-git/heiccy`. 릴리스별 소스·사용 안내·사용자 이슈·DMG 제공.
+- 최초 공개 이전은 새로운 Git 이력으로 시작하며 내부 이슈·PR과 개인 파일은 제외.
+- 공식 설치 파일은 GitHub Releases. Homebrew Cask·Mac App Store는 후속 범위.
+- 앱 첫 버전 `1.0.0`, Python 소스 버전 `0.3.0`. 패키지 이름·명령 호환성 유지.
+- ad-hoc 서명·미공증 안내 제공. Developer ID 도입 요건은 [빌드 안내](build.md) 참고.
 
-- Apple Silicon arm64, macOS 15 이상
-- Swift 및 macOS SDK가 포함된 Xcode 또는 Command Line Tools
-- `uv` 0.11.11
-- 앱 worker: Python 3.12.12, `packaging/macos/requirements.lock`의 해시 고정 의존성
+빌드·설치·입력 범위는 [빌드 안내](build.md), [호환성 안내](compatibility.md),
+[코덱 대응 소스 안내](third-party-sources.md)에서 관리한다.
+공개 exporter는 이 문서와 과거 내부 검증 기록을 복사하지 않는다.
 
-앱 패키징 의존성은 기본 CLI 의존성에 추가하지 않는다. 빌드 도구는 별도의
-`.venv-app-build` 환경을 사용한다. CI는 Apple Silicon `macos-15`, `macos-26`에서
-동일한 검증을 수행한다. 실행 OS와 아키텍처를 로그에 남기고 각 OS의 산출물을
-구분한다. runner 목록은 [GitHub 공식 문서](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)를 기준으로 한다.
+## 릴리스 순서
 
-테스트에는 XCTest가 포함된 Xcode 개발자 디렉터리를 사용한다. `xcode-select -p`가
-Command Line Tools를 가리키면 아래처럼 해당 셸에서만 Xcode 경로를 지정한다.
-Xcode를 다른 위치에 설치했다면 경로를 그에 맞춘다.
+1. 개발 PR을 검토하고 `main`에 반영한다. Python·Swift·worker·패널·DMG·배포 파일을
+   macOS 15·26에서 검증한다. 보호 브랜치 머지는 별도로 수행한다.
+2. `Info.plist`와 릴리스 노트를 확인하고 개발 커밋에 `macos-v1.0.0` 태그를 붙인다.
+   Python 태그 `v<Python 버전>`은 앱 게시를 실행하지 않는다.
+3. 태그 실행에서 두 OS 검증을 모두 통과해야 게시 job이 시작된다. macOS 15 artifact의
+   DMG를 선택하고 재빌드하지 않는다. macOS 26 artifact는 별도 검증 자료로 보존한다.
+4. 선택한 artifact의 커밋·앱 버전·파일명·SHA-256을 검증한다. 공개 소스는 태그 커밋의
+   허용 목록에서 추출하므로 작업 폴더·미추적 파일이 섞이지 않는다.
+5. 공개 소스 사본에 `v1.0.0` 태그를 연결한다. `SOURCE.json`은 개발 SHA와 파일 해시를,
+   릴리스 manifest는 게시 파일과 개발·공개 커밋의 대응을 기록한다.
+6. DMG·체크섬·manifest·코덱 대응 소스를 초안 릴리스에 업로드한다.
+   기존 태그·릴리스·산출물은 덮어쓰지 않는다. 실패한 초안은 내용을 확인한 뒤 복구한다.
+7. 초안에서 받아 SHA-256·Applications 설치·첫 실행·핵심 변환·기존 설정 승계를 확인하고
+   공개한다. 비인증 다운로드와 문서 링크를 다시 확인한다.
+8. 공개 배포가 정상 동작한 다음에만 개발 저장소를 Private로 전환하고 권한·CI를 재검증한다.
 
-```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-```
+## 게시 인증
 
-```bash
-uv sync --group dev
-uv run ruff check .
-uv run pytest
-swift build --package-path macos
-swift test --package-path macos
-bash packaging/macos/build.sh
-uv build
-uvx --from twine twine check dist/*.whl dist/*.tar.gz
-.venv-app-build/bin/python packaging/macos/validate_python_dist.py dist
-```
+자체 `GITHUB_TOKEN`은 개발 저장소 artifact 조회에 사용한다. 공개 저장소 쓰기에는
+`public-release` environment의 `HEICCY_RELEASE_TOKEN`이 필요하다. 대상 `heiccy`만
+선택한 fine-grained PAT의 `Contents: read and write` 또는 같은 권한의 GitHub App을
+사용한다. 현재 로컬 CLI의 넓은 OAuth 토큰을 CI secret으로 재사용하지 않는다.
+토큰 값은 문서·채팅·Git에 기록하지 않는다.
 
-## 산출물과 검증
+GitHub의 [토큰 인증 안내](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)와
+[보안 운영 안내](https://docs.github.com/en/actions/reference/security/secure-use)를 따른다.
+environment 접근 범위는 `macos-v*` 태그로 제한한다. 태그는 `main`에 포함된 커밋만
+허용하도록 workflow에서도 검증한다. Private 저장소에서 environment·보호 규칙의
+사용 가능 여부는 계정 플랜에 따라 확인한다. 지원되지 않으면 토큰을 노출하는 우회
+없이 배포 인증 방식을 조정한다.
 
-| 산출물 | 경로 |
-| --- | --- |
-| 앱 | `dist/macos/heiccy.app` |
-| arm64 DMG | `dist/macos/heiccy-0.3.0-arm64.dmg` |
-| SHA-256 | 위 DMG 이름 뒤 `.sha256` |
-| Python wheel 및 sdist | `dist/*.whl`, `dist/*.tar.gz` |
-
-빌드는 PyInstaller onedir worker의 Python 런타임, Pillow, pillow-heif,
-PyObjC와 네이티브 라이브러리를 앱에 포함한다. Swift 실행 파일, 고정
-`Info.plist`, 생성한 아이콘, 프로젝트 및 제3자 라이선스만 추가한다. 앱 번들 ID는
-`io.github.jaehunshin-git.heic-converter`, 최소 OS는 15다. 앱과 패널의 표시 이름은 `heiccy`이며 내부 실행 파일 `HEICConverter`는 유지한다. PyPI 패키지·CLI 이름과 기존 `~/Pictures/HEIC Converter` 출력 폴더도 유지한다.
-
-모든 Mach-O와 앱에 무료 ad-hoc 서명을 적용하고 arm64 아키텍처, 라이브러리 로더
-경로, 서명을 검증한다. Python 동적 확장 모듈을 로드할 수 있도록 이 ad-hoc 앱에
-hardened runtime을 적용하지 않는다. Apple Developer ID 서명 및 공증은 첫 범위에
-포함하지 않는다.
-
-`validate_app.py`는 번들 구조와 전수 네이티브 코드를 확인한다. `smoke_worker.py`는
-합성 HEIC를 사용해 JPEG·PNG를 생성한다. 앱의 `--smoke-test`는 내장 worker의 실제
-변환과 JSONL 인터페이스, 패널 표시·숨김·비활성화 시 유지 조건을 검증한다.
-사용자의 Python 경로를 제외한 PATH와 임시 HOME을 사용한다. 이는 시스템의 Python을
-삭제하는 검증 대신 사용자 Python 설치에 대한 실행 의존성을 확인하는 방법이다.
-
-DMG 볼륨 이름은 `heiccy`이며, `heiccy.app` 하나와 `/Applications` 바로가기로 구성한다. `validate_dmg.py`는 DMG를
-읽기 전용으로 마운트하고 `diskutil info -plist`로 실제 볼륨 이름이 `heiccy`인지 확인한 뒤
-별도 임시 설치 위치에 복사한 앱에서 worker 및 앱 검증을
-반복한다. 마운트는 검증 후 해제하고 체크섬을 확인한다.
+## DMG 생성 재시도와 검증 로그
 
 DMG 생성은 OS 버전·빌드 번호·아키텍처와 `hdiutil create -verbose` 출력을
 기록한다. `create_dmg.py`는 각 시도의 명령·종료 코드·stdout·stderr를 보존하고,
@@ -94,93 +74,24 @@ GitHub의 임시 merge 커밋을 체크아웃했다. 기존 quiet 로그에는 �
 없으므로 이미지 손상이나 runner 상태 문제로 단정할 수 없다. 위 변경은 실패 원인을
 진단할 근거를 보존하는 개선이며, 해당 CI 실패가 재발하지 않는다는 검증은 아니다.
 
-```bash
-cd dist/macos
-shasum -a 256 -c heiccy-0.3.0-arm64.dmg.sha256
-```
+## PyPI
 
-`validate_python_dist.py`로 wheel `METADATA` 및 sdist `PKG-INFO`의 버전,
-영문 Summary와 본문, sdist 허용 목록을 확인한다. `input/`, `output/`, 개인 사진,
-개발 환경 및 클립보드 데이터는 배포에 포함하지 않는다. 앱 프로젝트와 패키징 코드는
-GitHub에서 관리하고 기존 Python sdist 허용 목록은 유지한다.
+`README.pypi.md`는 영어 CLI/TUI 설명이며 앱 README와 분리한다. wheel `METADATA`와
+sdist `PKG-INFO`의 영어 Summary·설명·버전·포함 목록을 검증한다.
+`input/`·`output/`과 Swift·packaging·내부 문서는 Python 배포에 포함하지 않는다.
 
-테스트 사진은 실행 중 합성한다. HDR 테스트는 ImageIO로 SDR 기본 이미지와 Apple
-게인 맵을 생성하고 실제 네이티브 16비트 PNG, PQ ICC 프로파일 또는 CICP 색상 정보, 메타데이터 정책과
-원본 보존을 확인한다. 일반 HEIC나 JPEG의 SDR 처리는 별도로 검증한다.
-ICC와 CICP 모두 HDR 색상 표현에 유효하며 [Apple 설명](https://developer.apple.com/videos/play/wwdc2023/10181/)과
-[PNG3 규격](https://www.w3.org/TR/png-3/)을 따른다. 실행 OS에 따라 ImageIO의 기록
-형식이 다를 수 있다.
+앱 배포는 Python 배포를 실행하지 않는다. 이미 PyPI에 게시된 설명·URL은 이번 소스
+수정만으로 바뀌지 않는다. 공개 경로를 반영하려면 다음 독립 Python 릴리스에서
+새 메타데이터를 게시해야 한다. 이전 버전의 오래된 링크까지 수정할 수는 없다.
 
-## 설치와 첫 실행
+## Private 전환 전후 점검
 
-DMG의 체크섬을 검증한 뒤 앱을 Applications에 복사한다. 실행 차단 시 앱 실행을
-시도한 다음 시스템 설정의 개인정보 보호 및 보안에서 이 앱을 확인 없이 열기로
-허용한다. [Apple 공식 안내](https://support.apple.com/ko-kr/102445)를 따른다.
-DMG 포장과 ad-hoc 서명은 공증이나 Gatekeeper 통과를 의미하지 않는다.
+- 공개 안내에서 내부 이슈·PR·검증 문서 링크를 제거한다.
+- 기존 Python 버전 PyPI 링크의 단절 영향과 새 Python 설명의 공개 URL을 확인한다.
+- 기존 공개 fork·외부 복제본은 Private 전환으로 회수되지 않는다.
+- 계정 플랜에 따른 branch protection·environment·Actions 요금과 분 제한 변화를 확인한다.
+- 로컬 개발 `origin`은 기존 저장소를 유지하고 공개 저장소는 별도 checkout을 사용한다.
+- 비인증 접근에서 기존 코드·이슈·PR이 차단되고 새 README·태그·설치 파일이 열리는지
+  확인한다. Private 전환 후 두 OS CI와 게시 토큰을 재검증한다.
 
-기능이 켜져 있으면 HEIC를 복사한 뒤 변환 완료를 기다리고 기존 ⌘V로 붙여넣는다.
-좌클릭 패널은 현재 클립보드와 켜기/끄기를, 우클릭 메뉴는 별도 설정 창과 종료를 제공한다.
-패널 숨기기는 작업 취소나 앱 종료가 아니다. 정상 종료는 앱이 게시한 내용만 원본으로 복구한다.
-자세한 입력 계약과 미검증 수신 앱 동작은 [자동 클립보드 문서](macos-auto-clipboard.md)를 따른다.
-
-## 기존 앱에서 heiccy로 교체
-
-이름 변경 전 `HEIC Converter.app`과 새 `heiccy.app`은 파일 이름이 달라 드래그 설치만으로
-교체되지 않는다. 기존 앱의 메뉴바 메뉴에서 정상 종료해 앱이 게시한 클립보드의 복구와
-임시 파일 정리를 마친다. 기존 번들은 Applications 밖의 백업 위치로 옮겨 복구 경로를
-유지하고 새 `heiccy.app`을 설치한 뒤 해당 경로의 앱을 직접 연다. 두 번들을 동시에
-실행하지 않는다. 이전 빌드로 돌아갈 때도 새 앱을 먼저 정상 종료한다.
-
-번들 ID `io.github.jaehunshin-git.heic-converter`와 UserDefaults 키 `converter.settings`는
-유지하며 새 설정 도메인이나 데이터 이동을 만들지 않는다. 저장한 형식·품질·압축·메타데이터,
-사용자가 정한 레거시 출력 경로와 충돌 정책은 기존 값을 읽는다. 일시정지는 실행 중에만
-적용되므로 이전 앱에서 일시정지했어도 새 앱 실행 시 자동 변환은 켜진다.
-
-설치 검증은 빈 임시 디렉터리의 앱 실행과 기존 설정 승계를 구분한다. 기존 검증 스크립트의
-임시 설치 성공만으로 사용자의 Applications 교체나 실제 설정 도메인 승계가 검증됐다고
-기록하지 않는다.
-
-## 릴리스 절차
-
-1. 최종 커밋에서 CI의 두 OS 검증을 통과시키고 산출물과 검증 로그를 확인한다.
-2. 앱 릴리스는 `Info.plist`의 버전과 DMG 이름·체크섬을 일치시킨다. Python 릴리스는
-   `pyproject.toml`, wheel·sdist의 버전을 별도로 확인한다.
-3. 앱 전용 릴리스 태그는 `macos-v<앱 버전>`, Python 릴리스 태그는 `v<Python 버전>`을 사용한다.
-   태그와 릴리스·배포는 사용자 승인 후 진행한다.
-4. 앱 전용 변경은 검증한 DMG·체크섬만 GitHub Releases에 게시한다. PyPI 업로드는
-   Python 패키지 릴리스 때만 수행한다. 게시된 PyPI 설명 변경은 별도의 새 Python 버전이 필요하다.
-5. 다운로드한 파일의 체크섬과 설치본 실행을 재확인한다.
-
-이미 게시한 PyPI 버전은 덮어쓰지 않는다. 설명 수정도 새 버전을 사용한다.
-README.md와 PyPI 설명·메타데이터는 영어, README.ko.md와 추가 문서는 한국어다.
-이번 PR에 추가하는 브랜딩 문서·이미지는 상대 경로로 연결해 PR 브랜치에서도 확인할 수 있게 한다.
-sdist에서 제외되는 기존 빌드·지원 안내는 공개된 GitHub 절대 URL을 유지한다.
-새 Python 패키지를 PyPI에 게시하기 전에는 해당 설명의 문서·이미지 링크가 PyPI에서
-해결되는지 확인한다. 상대 경로를 사용하는 GitHub README를 그대로 게시하지 말고
-공개 절대 URL로 변환한 설명이나 별도 영어 PyPI 설명 파일을 준비·검증한다.
-설명 분리와 배포 설정 조정은 후속 이슈 #13의 범위다.
-CI는 산출물 업로드까지 수행하며 PR 생성 과정에서 main 머지, 태그 또는 게시를 실행하지
-않는다. Intel, Universal2, 로그인 자동 실행, 자동 업데이트, Homebrew Cask 및 Mac App
-Store는 후속 범위다.
-
-## 라이선스
-
-프로젝트 소스는 MIT 라이선스다. 앱에 포함한 Python 및 제3자 라이브러리는 각자의
-조건을 따른다. Pillow-heif binary wheel에는 GPL/LGPL 코덱 고지가 포함될 수 있다.
-배포된 앱의 `Contents/Resources/Licenses`에서 해당 버전의 라이선스 전문, 고지와
-소스 링크를 확인한다. 앱 배포 시 이 고지를 함께 제공한다.
-
-고정된 pillow-heif 1.1.1 wheel의 `LICENSES_bundled.txt`에는 이전 코덱의 소스
-링크가 남아 있다. 수집 스크립트는 `libheif_info()`의 실제 버전을 아래 목록과
-대조한 뒤, 라이선스 표기는 유지하면서 버전과 소스·라이선스 링크를 보정한다.
-AVIF/libaom이 없는 현재 wheel에서는 이전 libaom 항목을 제외한다. wheel 버전이나
-코덱 구성이 달라지면 빌드를 실패시켜 고지를 다시 확인하도록 한다.
-
-| 코덱 | 실제 버전 | 공식 소스 |
-| --- | --- | --- |
-| libheif | 1.20.2 | [v1.20.2](https://github.com/strukturag/libheif/tree/v1.20.2) |
-| libde265 | 1.0.16 | [v1.0.16](https://github.com/strukturag/libde265/tree/v1.0.16) |
-| x265 | 4.1+1-1d117be | [1d117bed4747758b51bd2c124d738527e30392cb](https://github.com/Multicorewareinc/x265/tree/1d117bed4747758b51bd2c124d738527e30392cb) |
-
-이 대조는 번들 버전과 고지 링크의 정확도를 확인하는 절차이며, 배포의 모든
-라이선스 의무를 충족했다는 법률 판단을 대신하지 않는다.
+실제 완료 여부는 [이슈 #13 검증 기록](macos-issue13-release-readiness.md)에 남긴다.

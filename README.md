@@ -18,10 +18,9 @@ The same repository provides a CLI and an arrow-key TUI for directory conversion
 and scripts. See [CLI/TUI](#clitui) for Python package installation and
 [README.ko.md](README.ko.md) for Korean documentation.
 
-**Release status:** The macOS app is implemented in source but has not been
-publicly released. [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)
-currently provides Python releases, with no DMG download. Public DMG distribution
-is tracked in [issue #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13).
+**Release status:** Version 1.0.0 is being prepared. The official download entry
+point is [heiccy Releases](https://github.com/jaehunshin-git/heiccy/releases).
+A DMG is available only after its release has been published.
 
 ## macOS app installation
 
@@ -32,15 +31,15 @@ is tracked in [issue #13](https://github.com/jaehunshin-git/heic-converter-tui/i
 
 ### DMG download and installation
 
-The app's distribution destination is [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases).
-**A public DMG is not available yet.** The following installation steps apply to
-an app/DMG built from source or a future published app release:
+The app's distribution destination is [GitHub Releases](https://github.com/jaehunshin-git/heiccy/releases).
+Download the DMG and checksum from the same published release. Until that
+release is available, these steps apply to a build made from source:
 
 1. Obtain the DMG and its matching `.sha256` file from the same build or release.
 2. In the directory containing both files, verify the checksum:
 
    ```bash
-   shasum -a 256 -c heiccy-0.3.0-arm64.dmg.sha256
+   shasum -a 256 -c heiccy-1.0.0-arm64.dmg.sha256
    ```
 
 3. Open the DMG and drag **heiccy.app** to **Applications**.
@@ -71,8 +70,8 @@ bash packaging/macos/build.sh
 ```
 
 The current source builds `dist/macos/heiccy.app`,
-`dist/macos/heiccy-0.3.0-arm64.dmg`, and the matching `.sha256` file.
-See [the build and release guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)
+`dist/macos/heiccy-1.0.0-arm64.dmg`, and the matching `.sha256` file.
+See [the build and release guide](https://github.com/jaehunshin-git/heiccy/blob/main/docs/build.md)
 for the pinned build environment and validation steps.
 
 ## Using heiccy
@@ -113,9 +112,9 @@ JPEG output is SDR. HDR conversion depends on the source and ImageIO support.
 - Receiving apps choose which clipboard representations to accept; pasting every
   item in every app is not guaranteed.
 
-See [the clipboard behavior and support contract](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md)
-and [compatibility validation records](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)
-for detailed behavior and observed receiving-app limitations.
+See [clipboard compatibility](docs/compatibility.md) for supported inputs and
+receiving-app limitations. Report user-facing bugs in
+[heiccy Issues](https://github.com/jaehunshin-git/heiccy/issues).
 
 ## CLI/TUI
 
@@ -359,38 +358,14 @@ JPEG or PNG. It does not support:
 
 ## Development and documentation
 
-| Category | Technology |
-| --- | --- |
-| macOS App | SwiftUI, AppKit NSPanel |
-| Runtime | Bundled Python 3.12.12 for the app; Python 3.11+ for CLI/TUI |
-| CLI/TUI | Typer, Rich, Questionary |
-| Imaging | Pillow, pillow-heif, macOS ImageIO through PyObjC |
-| Testing & Build | XCTest, Pytest, Ruff, SwiftPM, PyInstaller, Hatchling, uv |
-
-```text
-heic-converter-tui/
-├── macos/                  # Swift menu bar app and tests
-├── packaging/macos/        # Worker build, signing, icons, and DMG validation
-├── src/heic_converter/     # CLI/TUI, shared conversion service, and JSONL worker
-├── docs/                   # Build, behavior, branding, and validation records
-├── tests/                  # Python regression tests
-├── pyproject.toml          # Python package metadata and dependencies
-└── uv.lock                 # Locked development dependencies
-```
-
-| Document | Contents |
-| --- | --- |
-| [Build and release guide](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md) | Build environment, app/DMG validation, and release procedure. |
-| [Clipboard contract](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md) | Supported input, publication, cancellation, and cleanup behavior. |
-| [Keyboard access verification](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue11-panel-startup.md) | Cold-start menu access and keyboard validation records. |
-| [PR #9 validation record](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md) | Historical clipboard and receiving-app checks. |
-| [Issue #7 scope audit](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md) | Requirement changes, verification boundaries, and remaining work. |
-| [Branding](docs/macos-branding.md) | Approved name, assets, compatibility decisions, and verification records. |
-| [Brand assets](docs/assets/branding/DESIGN.md) | Logo, app icon, and menu bar symbol specifications. |
-
-These technical documents are written in Korean. App/DMG releases and PyPI
-releases are managed independently. Public DMG distribution and the repository
-rename are tracked in [issue #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13).
+Release snapshots include the Swift menu bar app, Python conversion service and
+CLI/TUI, tests, and pinned build tools. See the [build guide](docs/build.md).
+Each snapshot records the development source commit and file hashes in
+`SOURCE.json`; the public Git history begins with this migration.
+App releases use `v<app version>` in this repository. The PyPI package has its own
+version and release schedule; its English description is [README.pypi.md](README.pypi.md).
+Automatic app updates, Intel support, Homebrew Cask and Mac App Store distribution
+are not included in this release. To update, quit the app and install the new DMG.
 
 ## License
 

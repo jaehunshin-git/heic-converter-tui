@@ -20,10 +20,9 @@
 Python 패키지 설치는 [CLI/TUI](#clitui), 영어 문서는 [README.md](README.md)를
 참고하세요.
 
-**배포 상태:** macOS 앱은 소스에 구현되어 있으나 아직 공개 릴리스하지 않았습니다.
-현재 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)에는
-Python 릴리스만 있으며 DMG 다운로드는 없습니다. 공개 DMG 배포는
-[이슈 #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13)에서 진행합니다.
+**배포 상태:** 앱 `1.0.0` 배포를 준비 중입니다. 공식 다운로드 진입점은
+[heiccy Releases](https://github.com/jaehunshin-git/heiccy/releases)입니다.
+릴리스가 공개된 뒤 해당 버전의 DMG를 받을 수 있습니다.
 
 ## macOS 앱 설치
 
@@ -34,15 +33,15 @@ Python 릴리스만 있으며 DMG 다운로드는 없습니다. 공개 DMG 배�
 
 ### DMG 다운로드와 설치
 
-앱 배포 경로는 [GitHub Releases](https://github.com/jaehunshin-git/heic-converter-tui/releases)입니다.
-**현재 공개된 DMG는 없습니다.** 아래 절차는 소스에서 빌드한 앱·DMG 또는 향후
-공개되는 앱 릴리스에 적용합니다.
+앱 배포 경로는 [GitHub Releases](https://github.com/jaehunshin-git/heiccy/releases)입니다.
+같은 공개 릴리스에서 DMG와 체크섬을 받습니다. 공개 릴리스가 준비되기 전에는
+아래 절차를 소스에서 빌드한 앱·DMG에 적용할 수 있습니다.
 
 1. 같은 빌드나 릴리스에서 DMG와 해당 `.sha256` 파일을 받습니다.
 2. 두 파일이 있는 디렉터리에서 체크섬을 확인합니다.
 
    ```bash
-   shasum -a 256 -c heiccy-0.3.0-arm64.dmg.sha256
+   shasum -a 256 -c heiccy-1.0.0-arm64.dmg.sha256
    ```
 
 3. DMG를 열고 **heiccy.app**을 **Applications**로 드래그합니다.
@@ -72,9 +71,9 @@ bash packaging/macos/build.sh
 ```
 
 현재 소스의 산출물은 `dist/macos/heiccy.app`,
-`dist/macos/heiccy-0.3.0-arm64.dmg`와 같은 이름의 `.sha256` 파일입니다.
+`dist/macos/heiccy-1.0.0-arm64.dmg`와 같은 이름의 `.sha256` 파일입니다.
 고정 빌드 환경과 검증 절차는
-[앱 빌드·배포 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md)를 참고하세요.
+[앱 빌드·배포 안내](https://github.com/jaehunshin-git/heiccy/blob/main/docs/build.md)를 참고하세요.
 
 ## heiccy 사용법
 
@@ -114,9 +113,9 @@ ImageIO 지원에 따라 달라집니다.
 - 수신 앱마다 지원하는 클립보드 표현이 달라 모든 앱에서 모든 항목을 붙여넣을 수
   있다고 보장하지 않습니다.
 
-자세한 동작은 [클립보드 지원 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md),
-수신 앱에서 확인한 범위는
-[호환성 검증 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-remaining-validation.md)을 참고하세요.
+지원 입력과 수신 앱의 제한은 [클립보드 호환성](docs/compatibility.md)을 참고하세요.
+사용 중 발견한 문제는 [heiccy 이슈](https://github.com/jaehunshin-git/heiccy/issues)에
+접수할 수 있습니다.
 
 ## CLI/TUI
 
@@ -359,37 +358,14 @@ HEIC의 기본 정지 이미지 한 장만 JPEG 또는 PNG로 변환합니다. �
 
 ## 개발과 문서
 
-| Category | 기술 |
-| --- | --- |
-| macOS App | SwiftUI, AppKit NSPanel |
-| Runtime | 앱 내장 Python 3.12.12, CLI/TUI Python 3.11+ |
-| CLI/TUI | Typer, Rich, Questionary |
-| Imaging | Pillow, pillow-heif, PyObjC를 통한 macOS ImageIO |
-| Testing & Build | XCTest, Pytest, Ruff, SwiftPM, PyInstaller, Hatchling, uv |
-
-```text
-heic-converter-tui/
-├── macos/                  # Swift 메뉴바 앱과 테스트
-├── packaging/macos/        # Worker 빌드, 서명, 아이콘과 DMG 검증
-├── src/heic_converter/     # CLI/TUI, 공통 변환 서비스와 JSONL worker
-├── docs/                   # 빌드·동작·브랜딩·검증 기록
-├── tests/                  # Python 회귀 테스트
-├── pyproject.toml          # Python 패키지 메타데이터와 의존성
-└── uv.lock                 # 고정된 개발 의존성
-```
-
-| 문서 | 내용 |
-| --- | --- |
-| [앱 빌드·배포 안내](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-build-release.md) | 빌드 환경, 앱·DMG 검증과 배포 절차 |
-| [클립보드 지원 계약](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-auto-clipboard.md) | 지원 입력, 결과 게시·취소와 정리 정책 |
-| [키보드 접근 검증](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue11-panel-startup.md) | 콜드 스타트 메뉴 진입과 키보드 검증 기록 |
-| [PR #9 검증 기록](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-pr-readiness.md) | 당시 클립보드·수신 앱 확인 결과 |
-| [이슈 #7 범위 감사](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/docs/macos-issue7-scope-audit.md) | 요구사항 변경·검증 범위와 남은 작업 |
-| [브랜딩 기록](docs/macos-branding.md) | 확정 이름·자산, 호환성 결정과 검증 기록 |
-| [브랜드 자산 기준](docs/assets/branding/DESIGN.md) | 로고·앱 아이콘·메뉴바 심볼 규격 |
-
-앱·DMG와 PyPI 패키지는 독립적으로 릴리스합니다. 공개 DMG 배포와 저장소 이름 변경은
-[이슈 #13](https://github.com/jaehunshin-git/heic-converter-tui/issues/13)에서 진행합니다.
+공개 릴리스별 소스에는 Swift 메뉴바 앱, Python 변환 서비스·CLI/TUI, 테스트와
+고정 빌드 도구가 포함됩니다. [빌드 안내](docs/build.md)를 참고하세요.
+`SOURCE.json`에 개발 기준 커밋과 파일별 해시를 기록하며 공개 Git 이력은
+이번 이전부터 새로 시작합니다. 공개 저장소의 앱 태그는 `v<앱 버전>`입니다.
+PyPI 패키지는 버전과 배포 시점을 독립적으로 관리하며 영문 설명은
+[README.pypi.md](README.pypi.md)에서 관리합니다.
+앱 자동 업데이트, Intel 지원, Homebrew Cask와 Mac App Store 배포는 이번 범위에
+포함하지 않습니다. 업데이트할 때 앱을 종료한 뒤 새 DMG로 교체합니다.
 
 ## 라이선스
 
