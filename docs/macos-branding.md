@@ -3,7 +3,7 @@
 - 대상: [이슈 #5](https://github.com/jaehunshin-git/heic-converter-tui/issues/5)
 - 기록일: 2026-10-12
 - 최근 수정일: 2026-10-13
-- 상태: 이름·발음·제품 소개 문구와 Comic Sans MS 가로 로고 확정. 1:1 심볼과 흰 타일 앱 아이콘을 메뉴바·패널·앱 패키징에 적용하고 표시 이름과 배포 파일명도 `heiccy`로 변경했다. 실제 메뉴바 입력과 밝은 환경의 육안 검토는 남아 있다.
+- 상태: 이름·발음·제품 소개 문구와 로고·앱 아이콘 적용을 마쳤다. #13과 함께 앱 1.0.0의 밝은·어두운 Retina 패널, 보정된 헤더 정렬과 앱 메뉴 입력을 확인했다. 시스템 메뉴바의 상태 아이콘 직접 입력·실화면 가독성과 기존 설치본 교체 후 설정 승계는 미검증이므로 #5는 완료되지 않았다. 최신 범위는 [#13과 함께 수행한 추가 검증](#13과-함께-수행한-추가-검증-2026-10-13)을 따른다.
 
 ## 확정 사항
 
@@ -124,7 +124,11 @@ worker 변환, 임시 설치 복사본과 일반 실행·정상 종료 두 번�
 - [x] 영어·한국어 README를 앱 소개·DMG 설치·사용법·CLI/TUI 순서로 개편한다.
 - [x] 기존 앱 교체와 설정 보존 정책을 문서화하고 실제 DMG 볼륨 이름을 검증한다.
 - [ ] 실제 메뉴바 입력과 작은 크기·밝은/어두운 환경을 모두 육안 검토한다.
-- [ ] 이름 중복과 기존 제품과의 혼동 가능성을 확인한다.
+- [x] 보정된 패널 헤더를 밝은·어두운 실제 Retina 화면에서 확인한다.
+- [x] 공개 검색·GitHub·Mac App Store·PyPI 범위에서 이름 중복과 유사 제품의 혼동 가능성을 조사한다.
+- [x] 실제 앱 메뉴에서 일시정지·재개·설정 열기와 패널·헤더·설정 창의 접근성 이름을 확인한다.
+- [ ] 기존 설치본을 교체한 뒤 사용자 설정이 승계되는지 실제 업그레이드 경로에서 확인한다.
+- [ ] 시스템 상태 아이콘의 활성·일시정지 접근성 이름과 실제 입력을 확인한다.
 
 ### 표시 이름 변경 후속 작업 (2026-10-13)
 
@@ -236,6 +240,111 @@ wheel·sdist의 버전·허용 목록·영어 Summary·본문과 Twine 검사다
 기존 패키징 회귀 검사 두 건과 충돌했다. 링크 수정 후 해당 검사를 재실행하지 않은
 검증 누락을 확인했다. 기존 빌드·지원 문서의 공개 절대 URL을 복구하고 새 브랜딩
 문서·이미지에만 상대 경로를 유지한다. 검사 자체는 유지한다.
+
+## #13과 함께 수행한 추가 검증 (2026-10-13)
+
+PR #14는 main에 병합되었지만, 이슈 #5의 실제 메뉴바·업그레이드 검증까지
+완료한 것은 아니다. PR #16에서 #13의 설치·첫 실행·호환성 검증과 겹치는 항목을
+함께 확인했다. 아래 표가 최신 결과이며, 앞 절의 테스트 건수와 미검증 기록은
+각 작업 당시의 이력이다.
+
+### 대상과 증거
+
+- 로컬 macOS 27.2 (`26B5101f`), arm64, 화면 1512×982pt, `backingScaleFactor=2`.
+- 실행 대상은 이 작업 디렉터리의 `dist/macos/heiccy.app` 1.0.0이다. 앱의 원본 커밋은
+  `1e0efb2dbea77b7ca4057315a80a30eb2d48ecba`이며, 이번 문서 보완 전에 빌드한 앱이다.
+- `codesign --verify --deep --strict`가 통과했다. 앱 이름은 `heiccy`, 번들 ID와
+  내부 실행 파일은 기존 값이다. 이는 서명 무결성 검사이며 Apple 공증 검증은 아니다.
+- 앱만 포함된 실제 창 캡처 4개와 렌더 비교 1개를
+  [검증 파일의 SHA-256·대상·범위](assets/branding/verification/2026-10-13/evidence.json)에 기록했다.
+  캡처에는 개인 사진·파일·사용자 경로를 넣지 않았다.
+- 실제 앱은 사용자 기본설정 도메인을 사용했다. 설정 창은 읽기만 했으며 변환 옵션을
+  바꾸지 않았다. 일시정지·재개 입력 후 활성 상태를 확인했고, 검증 후 시스템의
+  어두운 외관도 확인했다.
+
+### 자동·렌더 검사와 실제 화면·입력 검사
+
+| 항목 | 자동·렌더 검사 | 실제 화면·입력 검사 | 판정 |
+| --- | --- | --- | --- |
+| 일반·일시정지 심볼 | 아이콘 XCTest 3개 통과. 원본 심볼 일치, template 속성·규격, 두 상태의 이미지·접근성 설명 차이를 확인했다. | 앱 메뉴의 일시정지·재개 입력과 패널 상태 변화는 확인했다. 시스템 상태 아이콘 자체의 표시·좌우 클릭은 확인하지 못했다. | 부분 검증 |
+| 작은 크기와 배율 | 16.2×18pt 심볼을 32×24pt 배경 안에 일반·일시정지 × 밝은·어두운 배경 × 1x·2x로 합성한 8개 AppKit 렌더를 검토했다. 일반 얼굴의 눈·입과 일시정지 두 획을 구별할 수 있다. | 실제 화면은 Retina 2x만 사용했다. 작은 아이콘이 놓인 시스템 메뉴바를 캡처하지 못했다. 1x 디스플레이 실기는 수행하지 않았다. | 렌더 검증 완료, 시스템 메뉴바 실기 미검증 |
+| 패널 헤더 수직 정렬 | 워드마크의 기존 `offset(y: 3)`을 유지했다. | 밝은·어두운 Retina 패널에서 흰 타일 심볼, 워드마크 글자 본체와 닫기 버튼의 중심·간격을 확인했다. 글자나 타일이 잘리지 않으며 추가 보정은 필요하지 않았다. | 현재 로컬 2x 환경 완료 |
+| 앱 메뉴 입력 | 상태 핸들러 검사는 실제 입력을 대신하지 않는다. | 앱 메뉴에서 현재 클립보드 보기·일시정지·재개·설정 열기를 선택해 결과를 확인했다. 이는 상태 아이콘의 직접 좌·우 클릭 경로와 다르다. | 앱 메뉴 경로 완료 |
+| UI 접근성 이름 | 상태 버튼·심볼·워드마크 이름은 코드에서 확인했다. | AX 트리에서 앱 메뉴 `heiccy`, 패널 제목·heading `heiccy`, 설정 창 `heiccy 설정`, 패널 숨기기 버튼과 설정 컨트롤 이름을 확인했다. 시스템 상태 버튼의 AX 이름과 VoiceOver 발화는 확인하지 않았다. | 부분 검증 |
+| 설정 승계 | 브랜딩 전후 설정 코드·키·필드 유지, 선택 테스트 21개, 격리 도메인의 구 코드 저장 → 새 코드 읽기·저장 검증이 통과했다. | 새 앱이 기존 사용자 도메인의 설정을 표시하는 것은 확인했다. Applications의 기존 설치본을 교체하는 실제 업그레이드는 수행하지 않았다. | 코드·격리 검증 완료, 설치 교체 미검증 |
+
+[밝은 실제 패널](assets/branding/verification/2026-10-13/panel-light-2x.png),
+[어두운 실제 패널](assets/branding/verification/2026-10-13/panel-dark-2x.png),
+[실제 메뉴 입력 후 일시정지 패널](assets/branding/verification/2026-10-13/panel-light-paused-2x.png),
+[실제 설정 창](assets/branding/verification/2026-10-13/settings-light-2x.png)을 비교할 수 있다.
+[메뉴 아이콘 렌더 비교](assets/branding/verification/2026-10-13/menu-render-matrix.png)는
+위쪽에 생성된 PNG 원래 픽셀 크기, 아래쪽에 최근접 보간 확대한 형태를 보여준다.
+이는 시스템 메뉴바 캡처가 아니며 template 색상을 밝은·어두운 배경 위에 합성한 것이다.
+확대 이미지만으로 원래 크기의 사용자 가독성 검증을 완료하지 않는다.
+
+시스템 메뉴바 접근은 `SystemUIServer` 선택에서 `timeoutReached`로 실패했다.
+앱의 `메뉴바 메뉴 열기` 선택과 Control+F8 입력도 상태 아이콘이나 상태 메뉴가
+노출되었음을 확인하지 못했다. 앱 메뉴의 조작 성공으로 이 경로를 완료 처리하지 않는다.
+
+### 기존 설치본과 설정 호환성
+
+컴퓨터에 등록된 기존 `HEIC Converter.app` 0.3.0과 새 `heiccy.app` 1.0.0은 같은
+`io.github.jaehunshin-git.heic-converter` 번들 ID와 `HEICConverter` 실행 파일을 쓴다.
+브랜딩 직전 main `c799e07`과 검증 대상 `1e0efb2`에서 `Models.swift`와
+`AppModel.swift`는 동일하다. `converter.settings`와 Codable 필드, 기존 출력 폴더를
+유지하므로 별도 설정 도메인 이관은 필요하지 않다.
+격리 검사에 사용한 구 코드의 전체 커밋은 `c799e076d4576a6518f3d3081532af62cb595dc9`다.
+
+선택한 21개 자동 테스트(설정 9개·품질 4개·설정 영속화 1개·아이콘 3개·모델 4개)는 기존·사용자 지정 경로, 임의 품질값, legacy 필드,
+저장 바이트 보존, 검증용 경로 보정과 일시정지 비영속화를 확인했다.
+별도의 UUID 도메인에 구 코드가 합성 설정을 저장하고 새 코드가 다른 프로세스에서
+전체 필드를 읽은 뒤 저장·재읽기하는 검사도 통과했다. 읽기만 한 뒤 저장 바이트가
+변하지 않는 것을 확인했고, 격리 도메인은 검사 후 정리했다. 실제 사용자 도메인도
+조사 전후 동일했으며 개인 설정값·경로는 문서에 공개하지 않는다.
+
+21개 테스트의 재현 필터는 다음과 같다. 이 건수에는 앞서 별도 확인한 아이콘 3개가
+포함되며 합산하지 않는다. 격리 업그레이드 검사는 자동 테스트 건수에 포함하지 않는다.
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  swift test --package-path macos --filter \
+  'FeedbackSettingsTests|QualityPresetTests|ConverterKitTests.testSettingsPersistWithoutQueueHistory|HeiccyIconTests|AutomaticConversionTests.test(LegacyDisabledSettingIsIgnoredAndConversionOptionsArePreserved|ResetConversionOptionsPreservesLegacyFieldsAndPausedExecution|NewModelStartsEnabledAfterPreviousExecutionWasPaused|PauseDoesNotPersistAndResumeProcessesCurrentHEIC)'
+```
+
+legacy `clipboardEnabled` 필드는 보존하지만 실행 중 자동 변환은 시작할 때 활성화된다.
+이는 브랜딩 이전부터 유지한 정책이다. 실제 설치 업그레이드 완료에는 구 앱의 정상 종료,
+백업·새 앱 설치, 새 앱에서 옵션 확인과 재실행까지 필요하다. 현재 설치본의 교체·이동은
+수행하지 않았으므로 임시 설치 실행이나 격리 코드 테스트를 그 절차의 완료로 보지 않는다.
+
+### 이름 중복과 혼동 가능성
+
+2026-10-13에 정확한 철자 `heiccy`를 공개 웹 검색, 인증된 GitHub 저장소 이름 검색,
+미국·한국 Mac App Store 검색 API, PyPI 프로젝트 API에서 조사했다.
+
+| 범위 | 결과와 한계 |
+| --- | --- |
+| 공개 웹의 정확한 철자 | 다른 동일 이름의 변환 제품을 확인하지 못했다. 검색 누락·색인 지연이 있을 수 있어 이름의 독점성을 뜻하지 않는다. |
+| GitHub `heiccy in:name` | 결과 1개는 자체 공개 저장소 `jaehunshin-git/heiccy`였다. 저장소 이름 검색 범위의 결과다. |
+| [미국 Mac App Store 검색](https://itunes.apple.com/search?term=heiccy&entity=macSoftware&country=us&limit=200)·[한국 검색](https://itunes.apple.com/search?term=heiccy&entity=macSoftware&country=kr&limit=200) | 각각 0개. 다른 국가·스토어·웹 서비스까지 조사한 것은 아니다. |
+| [PyPI `heiccy` API](https://pypi.org/pypi/heiccy/json) | HTTP 404. 기존 Python 패키지는 `heic-converter-tui`로 계속 유지한다. |
+| 유사 철자 [matisiekpl/heicy](https://github.com/matisiekpl/heicy) | 실제 HEIC→PNG 변환 앱이 존재한다. 원본 README는 Go·GTK 기반과 deb·Snap 패키징을 설명한다. 철자 한 글자 차이와 같은 변환 기능 때문에 검색·구두 소개에서 혼동 가능성이 있다. |
+
+혼동 가능성은 조사 결과에 근거한 판단이며 사용자 혼동 실험이나 상표 조사를 수행한
+것은 아니다. 이름을 바꾸지 않고 소문자 `heiccy`와 발음 `헤이키`,
+`macOS 메뉴바 · HEIC 자동 클립보드 변환`, 공식 저장소
+`jaehunshin-git/heiccy`를 함께 안내한다. 위 기능 설명은 식별을 위한 문서 설명이며
+별도 미확정인 이름 아래 소개 문구의 승인을 대신하지 않는다.
+
+### 이슈 완료와 배포 경계
+
+#5는 시스템 상태 아이콘의 실제 좌·우 입력·일반/일시정지 작은 크기 가독성,
+밝은·어두운 메뉴바 표시, 실제 설치 교체 후 설정 승계가 남아 있다.
+따라서 PR #16은 `Refs #5`를 사용하고 `Closes #5`를 아직 넣지 않는다.
+완료 후 해당 검증 근거와 함께 종료 연결을 바꾼다.
+
+#13은 독립 범위인 공개 배포·다운로드·설치 및 Private 전환 후 재검증이 남아 있다.
+자동 배포는 `HEICCY_RELEASE_ENABLED=false`로 보류하며 `Refs #13`을 유지한다.
+이번 브랜딩 검증은 #13의 정식 배포나 #5 전체 완료를 의미하지 않는다.
 
 ## 기록 방식
 
