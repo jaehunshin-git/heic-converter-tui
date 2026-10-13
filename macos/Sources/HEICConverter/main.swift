@@ -76,7 +76,7 @@ final class ClipboardPanel: NSPanel {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installApplicationMenu()
-        // 사진 클립보드 실루엣을 가운데 배치하고 좌우 여백을 확보한다.
+        // heiccy 클립보드 심볼을 가운데 배치하고 좌우 여백을 확보한다.
         statusItem = NSStatusBar.system.statusItem(withLength: 32)
         if let button = statusItem.button {
             button.image = PhotoClipboardIconGeometry.makeTemplateImage()
@@ -89,7 +89,7 @@ final class ClipboardPanel: NSPanel {
         let initialSize = NSSize(width: PanelPlacement.defaultSize.width, height: PanelPlacement.emptyHeight)
         panel = ClipboardPanel(contentRect: NSRect(origin: .zero, size: initialSize),
                                styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
-        panel.title = "HEIC Converter"
+        panel.title = "heiccy"
         panel.identifier = NSUserInterfaceItemIdentifier("HEICConverter.ClipboardPanel")
         panel.level = .floating
         // 포커스 콜백에서 닫는다. 아이콘 mouseDown 때 자동으로 숨기면 mouseUp이 다시 연다.
@@ -119,7 +119,7 @@ final class ClipboardPanel: NSPanel {
             button.image = PhotoClipboardIconGeometry.makeTemplateImage(isPaused: !enabled)
             button.toolTip = enabled ? "HEIC 자동 변환 중 · 오른쪽 클릭: 일시정지·설정·종료"
                 : "자동 변환 일시정지됨 · 오른쪽 클릭: 다시 시작"
-            button.setAccessibilityLabel(enabled ? "HEIC Converter · 자동 변환 활성화" : "HEIC Converter · 자동 변환 일시정지됨")
+            button.setAccessibilityLabel(enabled ? "heiccy · 자동 변환 활성화" : "heiccy · 자동 변환 일시정지됨")
         }
         clipboardSubscription = model.$clipboardFiles.combineLatest(model.$message).sink { [weak self] _ in
             self?.scheduleClipboardLayout()
@@ -271,7 +271,7 @@ final class ClipboardPanel: NSPanel {
 
     private func installApplicationMenu() {
         let menu = NSMenu()
-        let application = NSMenuItem(title: "HEIC Converter", action: nil, keyEquivalent: "")
+        let application = NSMenuItem(title: "heiccy", action: nil, keyEquivalent: "")
         application.submenu = makeStatusMenu()
         let close = NSMenuItem(title: "창 닫기", action: #selector(closeCurrentWindow), keyEquivalent: "w")
         close.target = self
@@ -308,7 +308,7 @@ final class ClipboardPanel: NSPanel {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 400),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "HEIC Converter 설정"
+            window.title = "heiccy 설정"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(model: model))
             window.center()
@@ -720,7 +720,7 @@ final class ClipboardPanel: NSPanel {
             && menu.items[5].target === NSApp)
         menu.performActionForItem(at: 0)
         check("메뉴에서 자동 변환 일시정지", !model.clipboardEnabled
-            && statusItem.button?.image?.accessibilityDescription == "HEIC Converter — 자동 변환 일시정지됨")
+            && statusItem.button?.image?.accessibilityDescription == PhotoClipboardIconGeometry.pausedAccessibilityDescription)
         let pausedMenu = makeStatusMenu()
         check("일시정지 메뉴는 다시 시작 표시", pausedMenu.items[0].title == "자동 변환 다시 시작")
         pausedMenu.performActionForItem(at: 0)
