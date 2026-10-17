@@ -1,3 +1,5 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](../../README.md)
+
 ---
 version: alpha
 name: heiccy

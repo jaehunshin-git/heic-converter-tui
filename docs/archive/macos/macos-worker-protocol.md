@@ -1,3 +1,5 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](README.md)
+
 # 내장 worker 프로토콜
 
 앱은 번들 `Contents/Resources/worker` 아래의 실행 파일을 `Process`로 실행한다.

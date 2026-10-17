@@ -1,4 +1,10 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](README.md)
+
 # heiccy 수동 릴리스
+
+> 아래는 저장소 간 소스 사본을 게시하던 과거 절차다.
+> 2026-10-18 [제품별 저장소 분리 결정](../../decisions/2026-10-18-product-repository-split.md)에 따라
+> 신규 앱 릴리스는 `heiccy`에서 관리한다. 코드·CI 분리 후 해당 저장소의 검증된 절차를 사용한다.
 
 GitHub Free의 Private 개발 저장소에서 두 OS CI를 유지하고, 로그인된 GitHub CLI로
 Public `jaehunshin-git/heiccy`에 게시한다. 전용 PAT·environment secret은 사용하지

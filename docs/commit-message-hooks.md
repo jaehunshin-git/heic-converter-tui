@@ -148,7 +148,7 @@ Git 내부 커밋 생성 경로도 훅 호출을 보장하지 않으며, 강제 
 python3 scripts/check_commit_message.py /path/to/COMMIT_EDITMSG
 python3 scripts/check_commit_message.py --rules scripts/commit_message_rules.json /path/to/message
 uv run pytest tests/test_commit_message.py
-uvx --from ruff==0.14.4 ruff check src tests scripts packaging/macos
+uv run --locked ruff check src tests scripts
 ```
 
 직접 검사 명령은 Git 편집기 주석 제거 없이 원문을 검사한다. 정상 종료는 0, 규칙 위반은 1,

@@ -1,3 +1,5 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](README.md)
+
 # heiccy 1.0.0 제3자 소스 제공 기록
 
 앱 1.0.0은 Apple Silicon arm64, macOS 15 이상을 대상으로 하며 첫 배포는

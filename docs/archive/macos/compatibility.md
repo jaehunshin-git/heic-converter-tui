@@ -1,3 +1,5 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](README.md)
+
 # heiccy 입력과 붙여넣기 호환성
 
 Apple Silicon arm64·macOS 15 이상에서 읽을 수 있는 로컬 일반 `.heic` 파일 URL과

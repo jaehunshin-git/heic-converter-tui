@@ -1,3 +1,5 @@
+> 과거 macOS 앱 기록입니다. 현재 Python 제품의 안내·배포 절차가 아닙니다. [보관 기준](README.md)
+
 # macOS 앱 검증 결과
 
 - 연결 이슈: [#2](https://github.com/jaehunshin-git/heic-converter-tui/issues/2)
