@@ -16,6 +16,8 @@ def test_pypi_description_and_sdist_use_dedicated_readme():
     assert project["readme"] == "README.pypi.md"
     assert project["urls"] == {
         "Homepage": "https://pypi.org/project/heic-converter-tui/",
+        "Repository": "https://github.com/jaehunshin-git/heic-converter-tui",
+        "Issues": "https://github.com/jaehunshin-git/heic-converter-tui/issues",
     }
     assert config["tool"]["hatch"]["build"]["targets"]["sdist"]["only-include"] == [
         "src",
@@ -27,11 +29,12 @@ def test_pypi_description_and_sdist_use_dedicated_readme():
     assert config["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 
 
-def test_pypi_readme_uses_pypi_without_unconfirmed_source_or_app_links():
+def test_pypi_readme_uses_public_python_repository_without_app_links():
     readme = (ROOT / "README.pypi.md").read_text(encoding="utf-8")
     assert "https://pypi.org/project/heic-converter-tui/" in readme
     assert "https://github.com/jaehunshin-git/heiccy" not in readme
-    assert "https://github.com/jaehunshin-git/heic-converter-tui" not in readme
+    assert "https://github.com/jaehunshin-git/heic-converter-tui" in readme
+    assert "https://github.com/jaehunshin-git/heic-converter-tui/issues" in readme
     assert "](LICENSE)" not in readme
     assert "](docs/" not in readme
     assert ".dmg" not in readme.lower()

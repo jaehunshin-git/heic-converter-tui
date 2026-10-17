@@ -29,6 +29,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://pypi.org/project/heic-converter-tui/"
+Repository = "https://github.com/jaehunshin-git/heic-converter-tui"
+Issues = "https://github.com/jaehunshin-git/heic-converter-tui/issues"
 
 [project.scripts]
 heic-converter = "heic_converter.cli:run"

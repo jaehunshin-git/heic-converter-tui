@@ -8,6 +8,11 @@ The distribution name is **heic-converter-tui** and the installed command is
 **heic-converter**. Package information is available on
 [PyPI](https://pypi.org/project/heic-converter-tui/).
 
+Source code and development documentation are available in the
+[GitHub repository](https://github.com/jaehunshin-git/heic-converter-tui).
+Report package issues in its
+[issue tracker](https://github.com/jaehunshin-git/heic-converter-tui/issues).
+
 ## Features
 
 - Convert directories of case-insensitive `.heic` files to JPEG or PNG.

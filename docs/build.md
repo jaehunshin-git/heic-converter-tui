@@ -51,8 +51,10 @@ macOS 26/Python 3.12.12를 검증한다. 두 환경 모두 ARM64인지 확인한
 - `v*` 태그 push는 같은 한 묶음만 14일 보관한다.
 - CI는 PyPI 업로드나 macOS 앱·DMG 빌드를 실행하지 않는다.
 
-실제 원격 적용 전에는 `heiccy`의 대체 앱 CI가 성공하고 기본 브랜치에 반영됐는지
-확인한다. 로컬 workflow 검사는 GitHub 실행 결과를 대신하지 않는다.
+[후속 공개 운영 결정](decisions/2026-10-18-python-repository-public.md)에 따라
+이 저장소에는 Python 전용 CI를 반영한다. `heiccy`의 앱 CI 복구와 기본 브랜치 반영은
+별도 후속 작업이며 이 저장소의 통과로 대체하지 않는다. 로컬 workflow 검사는 GitHub
+실행 결과를 대신하지 않는다.
 
 ## 배포 경계
 
@@ -60,6 +62,8 @@ macOS 26/Python 3.12.12를 검증한다. 두 환경 모두 ARM64인지 확인한
 이는 새 배포가 완료됐다는 뜻이 아니다. 실제 배포 전 게시된 버전과 태그 상태를
 확인하고 새 버전·태그·릴리스를 맞춘다. 이미 게시된 PyPI 설명은 다음 버전 배포에 반영한다.
 
-Python 제품의 공개 소스·문서·이슈 창구는 미확정이다. 그 전까지 배포 메타데이터의
-Homepage는 [PyPI 프로젝트](https://pypi.org/project/heic-converter-tui/)만 가리킨다.
+Python 제품의 공개 소스·문서 창구는
+[현재 저장소](https://github.com/jaehunshin-git/heic-converter-tui), 문의는
+[이슈](https://github.com/jaehunshin-git/heic-converter-tui/issues)로 안내한다.
+배포 메타데이터의 Homepage는 [PyPI 프로젝트](https://pypi.org/project/heic-converter-tui/)를 가리킨다.
 과거 앱 문서는 [보관 폴더](archive/macos/README.md)에서 당시 기록으로 열람한다.

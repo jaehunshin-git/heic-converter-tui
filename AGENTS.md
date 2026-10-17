@@ -10,9 +10,11 @@
   바꾸는 기존 통합 방침은 대체됐다.
 - 현재 작업 트리는 Python 제품 전용이다. 앱 관련 과거 기록은 `docs/archive/macos/`에 보존한다. 구현·검증 결과와
   원격 적용 전 조건은 [정리 작업 기록](docs/python-only-cleanup.md)을 확인한다.
-- 원격 앱 CI 중단은 `heiccy`의 대체 빌드·검증 경로와 기본 브랜치 반영을 확인한 뒤 적용한다. 로컬 변경만으로 두 저장소의
-  전환이 완료됐다고 보고하지 않는다.
-- 현재 비공개 상태를 유지한다. Python 제품의 공개 소스·문서·이슈 창구는 별도로 확정하며 비공개 주소를 공개 안내로 사용하지 않는다.
+- 후속 [공개 운영 결정](docs/decisions/2026-10-18-python-repository-public.md)에 따라
+  이 저장소를 공개하고 Python 전용 CI로 운영한다. `heiccy`의 앱 CI 복구와 기본 브랜치 반영은
+  별도 후속 작업이다.
+  이 저장소의 공개·검증만으로 두 저장소의 전환이 완료됐다고 보고하지 않는다.
+- Python 제품의 공개 소스·문서·이슈 창구는 `https://github.com/jaehunshin-git/heic-converter-tui`다.
 
 ## PyPI 문서 언어
 
@@ -21,8 +23,8 @@
   PyPI의 프로젝트 설명은 `README.pypi.md`를 사용한다.
 - `README.md`는 한국어 Python 제품 안내, `README.ko.md`는 해당 문서로의 호환 링크다.
   `README.pypi.md`에는 영어로 CLI/TUI의 기능·설치·사용·지원 환경·라이선스를 작성하고 앱 설치 안내는 넣지 않는다.
-- CLI/TUI 기능을 변경할 때는 Python 제품 안내와 `README.pypi.md`를 함께 검토한다. 기존 `heiccy` 링크를
-  일괄 계승하지 않으며 공개 창구 확정 후 접근 가능한 패키지 소스·문서·이슈 URL을 사용한다.
+- CLI/TUI 기능을 변경할 때는 Python 제품 안내와 `README.pypi.md`를 함께 검토한다. 소스·문서·이슈 링크는
+  이 저장소의 공개 URL을 사용하며 `heiccy`를 Python 제품의 창구로 안내하지 않는다.
 - 배포 전에 빌드된 wheel의 `METADATA`와 sdist의 `PKG-INFO`에서 `Summary` 및 본문 언어를 확인한다.
 - 이미 게시된 PyPI 버전의 설명은 덮어쓸 수 없으므로 설명을 변경할 때 버전을 올리고 GitHub 태그·릴리즈와 일치시킨다.
 
@@ -32,7 +34,7 @@
 - sdist는 `pyproject.toml`의 `only-include` 허용 목록을 사용한다. 배포 전 sdist 목록을 확인해 개인
   파일이 없는지 검증한다.
 - sdist의 설명 파일은 `README.pypi.md`만 포함한다. 앱 README, 앱 빌드 파일 및 `docs/`는 포함하지 않는다.
-  PyPI 설명에는 접근 가능한 절대 URL만 사용하며 공개 창구 확정 전에는 PyPI 프로젝트 링크를 사용한다.
+  PyPI 설명에는 이 저장소 또는 PyPI 프로젝트의 접근 가능한 절대 URL을 사용한다.
 
 ## 개발과 검증
 
