@@ -2,7 +2,7 @@ name: macOS 앱 및 Python 검증
 
 on:
   push:
-    branches: [main, 'feat/**', 'feat-*']
+    branches: [main]
     tags: ['v*', 'macos-v*']
   pull_request:
   workflow_dispatch:
@@ -77,6 +77,10 @@ jobs:
             --source-repository "$SOURCE_REPOSITORY" --source-commit "$SOURCE_COMMIT" \
             --source-ref "$SOURCE_REF" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT"
       - name: 검증한 산출물 업로드
+        # 일반 push·PR은 검증만 수행하고, 수동 검토본과 앱 릴리스 후보만 저장한다.
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/macos-v'))
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: heiccy-${{ matrix.os }}-arm64
@@ -89,7 +93,7 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'workflow_dispatch' && 3 || 14 }}
 
   release:
     name: 검증한 앱과 공개 소스의 draft 릴리스

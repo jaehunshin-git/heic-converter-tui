@@ -46,6 +46,20 @@ GitHub Free의 Private 저장소에서는 현재 보호 설정을 그대로 사�
   required reviewers와 wait timer는 Free·Pro·Team에서도 Public 저장소에만 제공된다.
   플랜 변경만으로 Private 저장소의 모든 보호 기능이 유지된다고 판단하지 않는다.
 
+## CI 실행과 artifact 보관
+
+브랜치 push는 `main`만 검증하며, 기존 `v*`·`macos-v*` 태그 push와 PR,
+수동 실행(`workflow_dispatch`)은 유지한다. feature 브랜치는 PR을 열기 전
+자동 push 검증이 없으며 필요하면 수동 실행한다. 두 OS(`macos-15`·`macos-26`)의
+기존 빌드·테스트·설치·배포 검증은 모두 유지한다.
+
+일반 `main` push·PR·Python `v*` 태그 push는 검증만 수행하고 artifact를 업로드하지 않는다.
+artifact 업로드는 `macos-v*` 태그 push(14일 보관)와 수동 실행(3일 보관)에만 수행한다.
+수동 실행은 선택한 ref가 `macos-v*` 태그여도 3일이며 자동 release는 실행하지 않는다.
+수동 릴리스는 기존대로 `macos-v*` 태그 push에서 생성한 두 OS artifact를
+보관 기간 안에 내려받아 검증한다. 저장 정책은 GitHub에 반영된 뒤 새 실행부터
+적용되며 기존 artifact에는 소급 적용되지 않는다.
+
 ## 릴리스 순서
 
 현재는 수동 릴리스 흐름을 사용한다. 개발 저장소의 Private 전환을 먼저 수행하는

@@ -2,7 +2,16 @@
 
 GitHub Free의 Private 개발 저장소에서 두 OS CI를 유지하고, 로그인된 GitHub CLI로
 Public `jaehunshin-git/heiccy`에 게시한다. 전용 PAT·environment secret은 사용하지
-않으며 `HEICCY_RELEASE_ENABLED=false`를 유지한다. CI 트리거는 push·PR 모두 유지한다.
+않으며 `HEICCY_RELEASE_ENABLED=false`를 유지한다. CI는 `main` 브랜치 push,
+`v*`·`macos-v*` 태그 push, PR, 수동 실행(`workflow_dispatch`)을 유지한다.
+feature 브랜치는 PR을 열기 전 자동 push 검증이 없으며 필요하면 수동 실행한다.
+두 OS(`macos-15`·`macos-26`)의 기존 빌드·테스트·설치·배포 검증은 모두 유지한다.
+
+artifact는 `macos-v*` 태그 push에서 14일, 수동 실행에서 3일 보관한다.
+일반 `main` push·PR·Python `v*` 태그 push는 검증만 수행하고 artifact를 업로드하지 않는다.
+수동 실행은 선택한 ref가 `macos-v*` 태그여도 3일이며 자동 release는 실행하지 않는다.
+저장 정책은 GitHub에 반영된 뒤 새 실행부터 적용되며 기존 artifact에는 소급 적용되지 않는다.
+
 아래 명령은 개발 저장소 루트에서 실행한다. PR #16은 사용자가 먼저 머지한다.
 현재 작업 브랜치나 PR용 합성 머지 커밋으로 정식 릴리스를 만들지 않는다.
 
@@ -26,7 +35,8 @@ gh run list --repo jaehunshin-git/heic-converter-tui --workflow macos.yml --bran
 
 ## 2. 같은 태그 실행의 두 OS 원본
 
-위 목록에서 태그 push 실행의 ID를 선택한다. `run_id`는 실제 숫자로 설정한다.
+위 목록에서 `macos-v*` 태그 push 실행의 ID를 선택하고, 14일 보관 기간 안에
+두 OS artifact를 내려받아 검증한다. `run_id`는 실제 숫자로 설정한다.
 `gh run view`에서 event=push, headSha=선택한 SHA, headBranch=개발 태그,
 conclusion=success와 macOS 15·26 두 validate job의 성공을 확인한다.
 자동 release job은 skipped여야 한다. 불일치·실패이면 게시하지 않는다.
