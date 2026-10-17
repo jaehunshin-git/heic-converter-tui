@@ -125,11 +125,15 @@ Git 기본 편집기가 덧붙인 주석은 Git의 `stripspace --strip-comments`
 
 | 메시지 | 처리 |
 | --- | --- |
-| Git 자동 `Merge ...` | 영문 제목 예외 없음. `git merge -m 'chore: 기능 브랜치 통합' ...`처럼 직접 작성 |
-| Git 자동 `Revert "..."` 및 영문 본문 | 검사기에 들어오면 차단. `git revert --no-commit <commit>` 후 한국어 `revert: 기능 변경 복원`으로 일반 커밋 권장 |
+| Git 자동 `Merge ...` | 영문 제목도 일반 규칙으로 검사. 한국어 메시지 직접 작성 |
+| Git 자동 `Revert "..."` 및 영문 본문 | 검사기에 들어오면 차단. 변경만 적용한 뒤 한국어로 커밋 |
 | `fixup! <대상 제목>` | prefix 한 개만 제외하고 대상 제목·추가 본문·footer 검사 |
 | `squash! <대상 제목>` | prefix 한 개만 제외하고 대상 제목·추가 본문·footer 검사 |
 | 중첩 prefix 또는 `amend!` | 허용하지 않음. 일반 규칙에 맞게 메시지 작성 |
+
+merge 메시지는 `git merge -m 'chore: 기능 브랜치 통합' ...`처럼 직접 지정한다.
+revert는 `git revert --no-commit <commit>` 후 `revert: 기능 변경 복원` 같은
+한국어 메시지로 일반 커밋한다.
 
 실제 Git 2.54.0 (Apple Git-157)에서 `git revert --no-edit`가 `commit-msg`를 호출하지
 않는 동작을 확인했다. 이 경로의 자동 커밋은 이 훅만으로 차단할 수 없다. `rebase` 등
@@ -146,7 +150,8 @@ Git 내부 커밋 생성 경로도 훅 호출을 보장하지 않으며, 강제 
 
 ```sh
 python3 scripts/check_commit_message.py /path/to/COMMIT_EDITMSG
-python3 scripts/check_commit_message.py --rules scripts/commit_message_rules.json /path/to/message
+python3 scripts/check_commit_message.py \
+  --rules scripts/commit_message_rules.json /path/to/message
 uv run pytest tests/test_commit_message.py
 uv run --locked ruff check src tests scripts
 ```
