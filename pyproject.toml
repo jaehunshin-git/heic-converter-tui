@@ -28,9 +28,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/jaehunshin-git/heiccy"
-Homepage = "https://github.com/jaehunshin-git/heiccy"
-Issues = "https://github.com/jaehunshin-git/heiccy/issues"
+Homepage = "https://pypi.org/project/heic-converter-tui/"
 
 [project.scripts]
 heic-converter = "heic_converter.cli:run"
@@ -44,6 +42,9 @@ dev = [
 [tool.ruff.lint]
 extend-select = ["B", "I", "UP"]
 ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/heic_converter"]

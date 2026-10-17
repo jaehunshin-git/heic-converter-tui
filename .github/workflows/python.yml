@@ -1,0 +1,66 @@
+name: Python 패키지 검증
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  validate:
+    name: Python ${{ matrix.python }} / ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            python: '3.11'
+          - os: macos-26
+            python: '3.12.12'
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.11
+          enable-cache: false
+      - name: Python 제품 환경 설치
+        run: |
+          test "$(uname -m)" = arm64
+          uv python install
+          uv sync --locked --group dev
+      - name: 정적 검사와 CLI·TUI·HDR 회귀 테스트
+        run: |
+          uv run --locked ruff check src tests scripts
+          uv run --locked pytest
+      - name: wheel·sdist 빌드와 배포 내용 검증
+        run: |
+          uv build --out-dir dist/python
+          uv run --locked python scripts/validate_python_dist.py dist/python
+      - name: 수동 검토본과 Python 태그 산출물 보관
+        # 두 OS의 배포 파일을 중복 저장하지 않는다. 실제 PyPI 업로드는 별도 절차다.
+        if: >-
+          matrix.os == 'macos-15' &&
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: heic-converter-tui-python
+          path: |
+            dist/python/*.whl
+            dist/python/*.tar.gz
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'workflow_dispatch' && 3 || 14 }}

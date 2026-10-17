@@ -26,7 +26,6 @@ def test_native_hdr_decode_uses_valid_primary_index(
         assert options == {"decode-request": "HDR"}
         decoded_indices.append(index)
         # 디코딩 실패를 모사해 인덱스 선택 이후의 기존 오류 처리도 확인합니다.
-        return None
 
     quartz = SimpleNamespace(
         CGImageSourceCreateWithURL=lambda url, options: source,
