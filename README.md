@@ -42,7 +42,7 @@ heic-converter-tui/
 ├── src/heic_converter/  # CLI, TUI, 변환 코어와 worker 실행 계약
 ├── tests/               # CLI/TUI와 변환 동작 회귀 테스트
 ├── scripts/             # 배포 파일 검증 등 개발 보조 도구
-├── docs/                # 빌드·결정·과거 기록 문서
+├── docs/                # 빌드·프로토콜·운영 결정 문서
 ├── pyproject.toml       # 패키지 메타데이터와 빌드 설정
 └── uv.lock              # 잠긴 의존성 해상도
 ```
@@ -137,7 +137,10 @@ uv run --locked python scripts/validate_python_dist.py dist/python
 | 문서 | 내용 |
 | --- | --- |
 | [Python 빌드 안내](docs/build.md) | 개발 환경에서 wheel과 sdist를 빌드하고 검증하는 절차 |
+| [worker JSONL 계약](docs/worker-protocol.md) | Python worker의 요청·이벤트·종료 규칙 |
+| [커밋 메시지 훅](docs/commit-message-hooks.md) | 개발용 커밋 메시지 검사와 설치 방법 |
 | [제품별 저장소 분리 결정](docs/decisions/2026-10-18-product-repository-split.md) | Python CLI/TUI와 macOS 앱의 담당 범위 |
+| [공개 운영 결정](docs/decisions/2026-10-18-python-repository-public.md) | 공개 소스·이슈 창구와 문서 운영 기준 |
 | [PyPI 설명 원본](README.pypi.md) | PyPI에 게시되는 영문 패키지 설명 |
 
 ## 📄 라이선스

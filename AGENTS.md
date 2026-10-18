@@ -8,8 +8,8 @@
   `heic-converter`를 유지한다.
 - Swift macOS 앱·DMG·앱 릴리스는 `jaehunshin-git/heiccy`에서 관리한다. 이 저장소를 과거 기록 전용으로
   바꾸는 기존 통합 방침은 대체됐다.
-- 현재 작업 트리는 Python 제품 전용이다. 앱 관련 과거 기록은 `docs/archive/macos/`에 보존한다. 구현·검증 결과와
-  원격 적용 전 조건은 [정리 작업 기록](docs/python-only-cleanup.md)을 확인한다.
+- 현재 문서는 Python 개발·배포·프로토콜과 운영 결정으로 구성한다. 과거 앱 문서·에셋과 일회성 작업 일지는
+  현재 트리에서 제거하고 Git 이력에서 확인한다.
 - 후속 [공개 운영 결정](docs/decisions/2026-10-18-python-repository-public.md)에 따라
   이 저장소를 공개하고 Python 전용 CI로 운영한다. `heiccy`의 앱 CI 복구와 기본 브랜치 반영은
   별도 후속 작업이다.
@@ -42,6 +42,6 @@
   --locked ruff check src tests scripts`, `uv run --locked pytest`를 실행한다.
 - 배포 후보는 `uv build --out-dir dist/python`으로 만들고 `uv run --locked python
   scripts/validate_python_dist.py dist/python`으로 검증한다.
-- `service.py`와 Quartz/PyObjC는 CLI/TUI와 HDR 기능에 필요하다. `worker.py`의 JSONL 모듈 실행
-  계약도 호환성을 위해 유지한다.
+- `service.py`와 Quartz/PyObjC는 CLI/TUI와 HDR 기능에 필요하다.
+  [worker JSONL 계약](docs/worker-protocol.md)도 호환성을 위해 유지한다.
 - `input/`·`output/`의 개인 파일은 검사·정리 자료로 사용하지 않는다. 변환 검증은 임시 합성 이미지로 수행한다.
