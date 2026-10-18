@@ -64,3 +64,30 @@ Python 제품의 공개 소스·문서 창구는
 [현재 저장소](https://github.com/jaehunshin-git/heic-converter-tui), 문의는
 [이슈](https://github.com/jaehunshin-git/heic-converter-tui/issues)로 안내한다.
 배포 메타데이터의 Homepage는 [PyPI 프로젝트](https://pypi.org/project/heic-converter-tui/)를 가리킨다.
+
+## GitHub Release와 PyPI 게시
+
+1. `pyproject.toml`과 `uv.lock`의 버전, 배포할 `vVERSION` 태그를 맞춘다.
+   동일 버전이 이미 게시됐는지 PyPI와 GitHub Release에서 확인한다.
+2. PR의 두 Python CI가 성공한 뒤 기본 브랜치에 병합한다. 필수 검사는
+   `Python 3.11 / macos-15`, `Python 3.12.12 / macos-26`을 사용한다.
+3. 병합 커밋에서 wheel·sdist를 빌드하고 위의 메타데이터·허용 목록·별도 설치
+   검증을 수행한다. 검증한 파일의 SHA-256을 기록한다.
+4. 같은 커밋의 `vVERSION` 태그로 GitHub Release 초안을 만들고 검증한 wheel·sdist를
+   첨부한다. 변경 내역과 지원 환경·업데이트 방법을 한국어로 작성한다.
+5. 다음처럼 같은 파일을 PyPI에 게시한다. 인증은 기존 uv 인증 저장소 또는
+   `UV_PUBLISH_TOKEN` 환경 변수로 전달하며 명령 인자·로그·Git 파일에 적지 않는다.
+
+   ```sh
+   uv publish --dry-run dist/python/*.whl dist/python/*.tar.gz
+   uv publish dist/python/*.whl dist/python/*.tar.gz
+   ```
+
+6. PyPI 파일의 SHA-256과 영어 설명·버전·프로젝트 URL을 확인한다. 새 가상환경에서
+   `heic-converter-tui==VERSION`을 설치하고 도움말·합성 이미지 변환을 확인한다.
+   GitHub Release를 게시하고 태그·버전·첨부 파일이 PyPI와 일치하는지 확인한다.
+
+로컬 게시에는 유효한 PyPI 업로드 인증이 필요하다.
+[uv 게시 안내](https://docs.astral.sh/uv/guides/publish/)에 따라 인증을 설정한다.
+CI에서 게시하도록 전환할 때는 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)을
+별도로 구성한다.
