@@ -1,5 +1,7 @@
 # heic-converter-tui
 
+English | [Korean](https://github.com/jaehunshin-git/heic-converter-tui/blob/main/README.ko.md)
+
 Convert directories of HEIC images to JPEG or PNG with a Python command-line
 interface or an arrow-key TUI. Processing happens locally, and source files are
 not modified.
@@ -27,13 +29,21 @@ Report package issues in its
 ## Supported environment
 
 - Python 3.11 or later.
-- macOS is the primary supported platform.
+- macOS is the primary supported platform. Other operating systems are not
+  currently validated.
+- CI validates macOS 15 with Python 3.11 and macOS 26 with Python 3.12.12.
+  Python 3.11 is the minimum package requirement.
 - Pillow and pillow-heif are installed as package dependencies. On macOS,
   PyObjC provides access to native ImageIO APIs.
 - HDR PNG requires macOS 15 or later, supported ImageIO APIs, and a supported
-  source gain map. Other environments use the SDR base image; JPEG is SDR.
+  source gain map with EXIF orientation 1. Rotated inputs and other unsupported
+  inputs or environments use the SDR base image; JPEG is SDR.
 - The TUI requires an interactive terminal. Non-interactive use must specify
   `--format`.
+
+The TUI offers Korean and English. CLI help, conversion progress, and error
+messages are currently in Korean. Selecting English in the TUI does not
+translate every message.
 
 ## Installation
 

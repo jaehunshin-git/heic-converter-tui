@@ -10,7 +10,7 @@ def test_pypi_description_and_sdist_use_dedicated_readme():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = config["project"]
     assert project["name"] == "heic-converter-tui"
-    assert project["version"] == "0.3.0"
+    assert project["version"] == "0.3.1"
     assert project["scripts"] == {"heic-converter": "heic_converter.cli:run"}
     assert project["description"] and project["description"].isascii()
     assert project["readme"] == "README.pypi.md"
