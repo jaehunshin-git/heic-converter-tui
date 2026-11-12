@@ -1,7 +1,7 @@
 # Python 패키지 개발과 배포 검증
 
 이 저장소는 `heic-converter-tui` 패키지와 `heic-converter` CLI/TUI를 관리한다.
-사용법은 [README](../README.md), 모듈 실행 인터페이스는
+사용법은 [영어 README](../README.md) 또는 [한국어 README](../README.ko.md), 모듈 실행 인터페이스는
 [worker JSONL 계약](worker-protocol.md)을 확인한다.
 
 ## 개발 환경
@@ -17,7 +17,7 @@ uv run --locked ruff check src tests scripts
 uv run --locked pytest
 ```
 
-`uv.lock`에 고정한 의존성을 사용한다. 새 의존성을 도입할 때만 잠금을 갱신하고
+`uv.lock`에 고정한 의존성을 사용한다. 의존성 또는 프로젝트 버전이 바뀌면 잠금을 갱신하고
 관련 검증을 다시 수행한다. 테스트는 임시 합성 이미지를 생성하며 개인 사진을 쓰지 않는다.
 
 ## wheel과 sdist 검증
@@ -74,7 +74,9 @@ Python 제품의 공개 소스·문서 창구는
 3. 병합 커밋에서 wheel·sdist를 빌드하고 위의 메타데이터·허용 목록·별도 설치
    검증을 수행한다. 검증한 파일의 SHA-256을 기록한다.
 4. 같은 커밋의 `vVERSION` 태그로 GitHub Release 초안을 만들고 검증한 wheel·sdist를
-   첨부한다. 변경 내역과 지원 환경·업데이트 방법을 한국어로 작성한다.
+   첨부한다. 릴리스 제목·변경 내역·지원 환경·업데이트 방법은 영어로 작성한다.
+   저장소 description, 기본 README, PyPI 설명도 영어로 유지한다.
+   한국어 제품 안내는 `README.ko.md`에 별도로 제공하고 두 README를 서로 연결한다.
 5. 다음처럼 같은 파일을 PyPI에 게시한다. 인증은 기존 uv 인증 저장소 또는
    `UV_PUBLISH_TOKEN` 환경 변수로 전달하며 명령 인자·로그·Git 파일에 적지 않는다.
 

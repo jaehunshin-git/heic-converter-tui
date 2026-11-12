@@ -16,14 +16,15 @@
   이 저장소의 공개·검증만으로 두 저장소의 전환이 완료됐다고 보고하지 않는다.
 - Python 제품의 공개 소스·문서·이슈 창구는 `https://github.com/jaehunshin-git/heic-converter-tui`다.
 
-## PyPI 문서 언어
+## 공개 제품 문서 언어
 
-- PyPI에 표시되는 프로젝트 설명과 배포 메타데이터는 영어로 작성한다.
+- 공개 제품 README, GitHub 저장소 description, GitHub Release 제목·본문, PyPI 프로젝트 설명과 배포 메타데이터는 영어로 작성한다.
+  이는 일반 문서의 한국어 작성 규칙에 대한 예외다. 개발·프로토콜·운영 결정 문서는 한국어로 유지한다.
 - `pyproject.toml`의 `description`과 `readme`가 가리키는 `README.pypi.md`는 영어로 유지한다.
   PyPI의 프로젝트 설명은 `README.pypi.md`를 사용한다.
-- `README.md`는 한국어 Python 제품 안내, `README.ko.md`는 해당 문서로의 호환 링크다.
+- `README.md`는 영어 Python 제품·개발 안내, `README.ko.md`는 전체 한국어 안내로 유지하고 서로 링크한다.
   `README.pypi.md`에는 영어로 CLI/TUI의 기능·설치·사용·지원 환경·라이선스를 작성하고 앱 설치 안내는 넣지 않는다.
-- CLI/TUI 기능을 변경할 때는 Python 제품 안내와 `README.pypi.md`를 함께 검토한다. 소스·문서·이슈 링크는
+- CLI/TUI 기능을 변경할 때는 `README.md`, `README.ko.md`, `README.pypi.md`를 함께 검토한다. 소스·문서·이슈 링크는
   이 저장소의 공개 URL을 사용하며 `heiccy`를 Python 제품의 창구로 안내하지 않는다.
 - 배포 전에 빌드된 wheel의 `METADATA`와 sdist의 `PKG-INFO`에서 `Summary` 및 본문 언어를 확인한다.
 - 이미 게시된 PyPI 버전의 설명은 덮어쓸 수 없으므로 설명을 변경할 때 버전을 올리고 GitHub 태그·릴리즈와 일치시킨다.
